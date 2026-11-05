@@ -1,0 +1,194 @@
+"""Transparent, missing-aware rule-based scoring; not investment advice."""
+from __future__ import annotations
+import math
+import re
+import pandas as pd
+
+WEIGHTS = {'실적·성장성':25,'밸류에이션':20,'수급':15,'재무건전성':15,'주가 추세':10,'뉴스 모멘텀':15}
+GOOD_WORDS = ('수주','흑자전환','증익','상향','성장','신제품','수출 증가','계약 체결','자사주 소각','신고가','실적 개선','증설')
+BAD_WORDS = ('적자전환','하향','감익','실적 악화','유상증자','횡령','배임','소송','상장폐지','리콜','과징금','자금난','매출 감소')
+
+
+def number(v):
+    try:
+        x=float(v)
+        return x if math.isfinite(x) else None
+    except (ValueError,TypeError): return None
+
+
+def clip(x,lo=0,hi=100): return max(lo,min(hi,float(x)))
+
+
+def interp(x, low_bad, high_good):
+    x=number(x)
+    if x is None:return None
+    if low_bad==high_good:return 50.0
+    return clip((x-low_bad)*100/(high_good-low_bad))
+
+
+def last_pair(df,key):
+    if df is None or df.empty or key not in df:return None,None
+    values=[number(x) for x in df[key]]
+    values=[x for x in values if x is not None]
+    return (values[-1] if values else None,values[-2] if len(values)>1 else None)
+
+
+def pct_change(new,old):
+    if number(new) is None or number(old) in (None,0): return None
+    # Baseline <= 0 is not a meaningful conventional growth rate.
+    if old<=0: return None
+    return (new/old-1)*100
+
+
+def get_indicators(prices):
+    if prices is None or prices.empty or 'Close' not in prices:return {}
+    close=pd.to_numeric(prices['Close'],errors='coerce').dropna()
+    if close.empty:return {}
+    delta=close.diff(); gains=delta.clip(lower=0); losses=-delta.clip(upper=0)
+    avg_gain=gains.ewm(alpha=1/14,adjust=False,min_periods=14).mean()
+    avg_loss=losses.ewm(alpha=1/14,adjust=False,min_periods=14).mean()
+    rs=avg_gain/avg_loss.replace(0,float('nan'))
+    rsi=(100-100/(1+rs)).iloc[-1] if len(rs)>0 else None
+    if len(close)>=15 and avg_loss.iloc[-1]==0:
+        rsi=100 if avg_gain.iloc[-1]>0 else 50
+    def ma(n): return number(close.tail(n).mean()) if len(close)>=n else None
+    fast=close.ewm(span=12,adjust=False).mean()
+    slow=close.ewm(span=26,adjust=False).mean()
+    macd=fast-slow
+    sig=macd.ewm(span=9,adjust=False).mean()
+    return {
+      'last':number(close.iloc[-1]),'prev':number(close.iloc[-2]) if len(close)>1 else None,
+      'ma20':ma(20),'ma60':ma(60),'ma120':ma(120),
+      'rsi14':number(rsi),'macd':number(macd.iloc[-1]) if len(close)>=35 else None,
+      'signal':number(sig.iloc[-1]) if len(close)>=35 else None,
+      'high52':number(close.tail(252).max()) if len(close)>=30 else None,
+      'low52':number(close.tail(252).min()) if len(close)>=30 else None,
+      'return20':pct_change(close.iloc[-1],close.iloc[-21]) if len(close)>=21 else None,
+      'return60':pct_change(close.iloc[-1],close.iloc[-61]) if len(close)>=61 else None,
+      'volume20':number(pd.to_numeric(prices['Volume'],errors='coerce').tail(20).mean()) if 'Volume' in prices else None,
+      'asof':str(close.index[-1].date()) if hasattr(close.index[-1],'date') else str(close.index[-1])
+    }
+
+
+def score_record(label,points,parts,comments,confidence='보통'):
+    return {'category':label,'weight':WEIGHTS[label],
+            'score':round(sum(s*w for s,w in parts)/sum(w for _,w in parts),1) if parts else None,
+            'notes':comments,'confidence':confidence if parts else '미산출', 'tests':len(parts)}
+
+
+def evaluate(prices, annual, quarterly, flow, news, profile):
+    profile=profile or {}; indicators=get_indicators(prices)
+    results=[]
+    # PERFORMANCE
+    tests=[]; notes=[]
+    rev,prior=last_pair(annual,'revenue'); op,opprior=last_pair(annual,'operating_profit')
+    growth=pct_change(rev,prior); opgrowth=pct_change(op,opprior)
+    if growth is not None:
+        tests.append((interp(growth,-20,30),2));notes.append(f'연간 매출 성장률 {growth:+.1f}%')
+    if opgrowth is not None:
+        tests.append((interp(opgrowth,-40,50),3));notes.append(f'연간 영업이익 성장률 {opgrowth:+.1f}%')
+    if rev and op is not None:
+        margin=op/rev*100
+        tests.append((interp(margin,-5,25),2));notes.append(f'영업이익률 {margin:.1f}%')
+    qop,qopprev=last_pair(quarterly,'operating_profit')
+    if qop is not None and qopprev is not None:
+        # QoQ is not YoY; avoid equating seasonal changes with growth.
+        notes.append(f'최근 분기 영업이익 {qop/1e8:,.0f}억원 (직전 분기 {qopprev/1e8:,.0f}억원)')
+    results.append(score_record('실적·성장성',0,tests,notes))
+    # VALUATION: standalone thresholds are crude, never assert sector-relative ranking
+    tests=[];notes=[]
+    per=number(profile.get('trailingPE'))
+    pbr=number(profile.get('priceToBook'))
+    roe=number(profile.get('returnOnEquity'))
+    if per is not None and per>0:
+        tests.append((interp(per,40,7),1));notes.append(f'PER {per:.1f}배 (단순 절대수준, 업종 보정 전)')
+    if pbr is not None and pbr>0:
+        tests.append((interp(pbr,5,0.7),1));notes.append(f'PBR {pbr:.2f}배 (자산 효율성 함께 확인 필요)')
+    if pbr and roe is not None and pbr>0 and roe>0:
+        earnings_yield=roe/pbr*100 # fractional roe / pbr -> percentage approximation
+        tests.append((interp(earnings_yield,2,15),1));notes.append(f'ROE/PBR 참고 지표 {earnings_yield:.1f}% (자기자본 효율 보정)')
+    results.append(score_record('밸류에이션',0,tests,notes,'낮음 · 업종 비교 미반영'))
+    # FLOW
+    tests=[];notes=[]
+    if flow is not None and len(flow)>=5 and all(k in flow for k in ('외국인','기관')):
+        for period,w in ((5,1),(20,2),(60,1)):
+            part=flow.tail(period)
+            if len(part)<period:continue
+            net=float(part[['외국인','기관']].sum().sum())
+            val=55 if net>0 else 45 if net<0 else 50
+            tests.append((val,w));notes.append(f'최근 {period}거래일 외국인+기관 순매수 합계 {net/1e8:+,.0f}억원')
+        streak=flow[['외국인','기관']].sum(axis=1).tail(10)
+        if len(streak)>=5:
+            positive=int((streak>0).sum());tests.append((positive/len(streak)*100,2))
+            notes.append(f'최근 {len(streak)}거래일 합산 순매수일 {positive}일')
+    results.append(score_record('수급',0,tests,notes,'보통 · 순매수 규모의 시총 보정 미반영'))
+    # SOLVENCY
+    tests=[];notes=[]
+    assets,_=last_pair(annual,'assets'); debt,_=last_pair(annual,'liabilities'); eq,_=last_pair(annual,'equity')
+    business_type=' '.join(str(profile.get(k,'')) for k in ('industry','sector','__name__')).lower()
+    is_financial=any(s in business_type for s in ('bank','insurance','financial','은행','보험','금융','증권'))
+    if not is_financial and eq is not None and debt is not None and eq>0:
+        debt_ratio=debt/eq*100
+        tests.append((interp(debt_ratio,300,40),2));notes.append(f'부채비율 {debt_ratio:.1f}%')
+    elif is_financial:
+        notes.append('금융업: 일반 제조업 부채비율 평가 제외')
+    if assets and eq is not None and assets>0:
+        equity_ratio=eq/assets*100
+        if not is_financial:
+            tests.append((interp(equity_ratio,15,70),1))
+        notes.append(f'자기자본비율 {equity_ratio:.1f}%')
+    if op is not None and op>0 and eq is not None and eq>0:
+        # ROE is ideally net income/equity; use NI if available
+        net,_=last_pair(annual,'net_income')
+        if net is not None:
+            simple_roe=net/eq*100
+            tests.append((interp(simple_roe,-5,20),1));notes.append(f'기말 자본 기준 간이 ROE {simple_roe:.1f}% (평균자본 ROE와 상이)')
+    results.append(score_record('재무건전성',0,tests,notes,'보통 · 업종별 정밀 보정 전'))
+    # TECHNICAL
+    tests=[];notes=[];last=indicators.get('last')
+    ma20=indicators.get('ma20');ma60=indicators.get('ma60');ma120=indicators.get('ma120')
+    if last and ma20:
+        tests.append((75 if last>ma20 else 25,1));notes.append(f'종가가 20일선 {"위" if last>ma20 else "아래"}')
+    if ma20 and ma60:
+        tests.append((75 if ma20>ma60 else 25,2));notes.append(f'20일선이 60일선 {"위" if ma20>ma60 else "아래"}')
+    if ma60 and ma120:
+        tests.append((75 if ma60>ma120 else 25,1))
+    if indicators.get('rsi14') is not None:
+        rsi=indicators['rsi14'];tests.append((50 if rsi<30 or rsi>70 else 65,1))
+        notes.append(f'RSI(14) {rsi:.1f} (극단 구간은 방향성 판단 주의)')
+    results.append(score_record('주가 추세',0,tests,notes))
+    # NEWS: keyword-only high uncertainty; deliberately not LLM sentiment
+    tests=[];notes=[]
+    if news is not None and not news.empty and 'title' in news:
+        titles=[str(t) for t in news['title'].head(20)]
+        pos=sum(bool(any(word in t for word in GOOD_WORDS)) for t in titles)
+        neg=sum(bool(any(word in t for word in BAD_WORDS)) for t in titles)
+        if pos+neg>0:
+            tests.append((clip(50+30*(pos-neg)/max(pos+neg,3)),1))
+            notes.append(f'최근 뉴스 제목 {len(titles)}건 중 긍정 키워드 {pos}건·부정 키워드 {neg}건 (문맥 이해 X)')
+        else:
+            notes.append(f'뉴스 {len(titles)}건 수집, 방향성 키워드 부족 → 점수 보류')
+    results.append(score_record('뉴스 모멘텀',0,tests,notes,'낮음 · 제목 키워드만 판단'))
+
+    available=[r for r in results if r['score'] is not None]
+    covered=sum(r['weight'] for r in available)
+    total=round(sum(r['score']*r['weight'] for r in available)/covered,1) if covered else None
+    label=('평가 불가' if total is None else '긍정적 관심' if total>=75 else '중립·관찰' if total>=55 else '주의·재점검')
+    return {'rows':results,'total':total,'coverage':covered,'label':label,'indicators':indicators,
+            'partial':covered<80,'available_count':len(available)}
+
+
+def explain(result):
+    usable=[r for r in result['rows'] if r['score'] is not None]
+    if not usable:return '평가에 필요한 기초 데이터가 부족합니다. 시세 및 재무 데이터 연결 상태를 확인하세요.'
+    strong=sorted(usable,key=lambda r:r['score'],reverse=True)
+    weak=sorted(usable,key=lambda r:r['score'])
+    best=strong[0]; risk=weak[0]
+    obs=' '.join(best['notes'][:2]) if best['notes'] else ''
+    neg=' '.join(risk['notes'][:2]) if risk['notes'] else ''
+    msg=(f"산출 가능한 {result['coverage']}점 배점의 항목을 재가중한 종합 평가는 {result['total']:.1f}/100점입니다. "
+         f"상대적으로 강한 분야는 {best['category']}({best['score']:.0f}점)입니다. {obs} "
+         f"주의해서 확인할 분야는 {risk['category']}({risk['score']:.0f}점)입니다. {neg}")
+    if result['partial']:
+        msg+=' 일부 항목은 데이터 미확보로 제외됐으므로 잠정 점수이며 종목 간 단순 비교를 피해야 합니다.'
+    return msg
