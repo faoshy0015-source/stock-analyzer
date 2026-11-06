@@ -117,14 +117,11 @@ with st.sidebar:
     st.caption('국내 KOSPI · KOSDAQ 주식')
     q=st.text_input('종목명 또는 6자리 종목코드',value=st.session_state.get('query','005930'),
                     placeholder='예: 삼성전자 또는 005930')
-    api_key=st.text_input('OpenDART 인증키 (선택)', value=secret('DART_API_KEY'),
-                          type='password',help='비워도 시세·차트·뉴스는 사용할 수 있습니다. 재무·공시 조회에는 키가 필요합니다.')
+    api_key=secret('DART_API_KEY')
     openai_key=st.text_input('OpenAI API 키 (선택)',value=secret('OPENAI_API_KEY'),
                              type='password',help='AI 의견 버튼을 눌렀을 때만 유료 API가 호출됩니다.')
-    with st.expander('한국투자증권 현재가 API (선택)'):
-        kis_key=st.text_input('KIS App Key',value=secret('KIS_APP_KEY'),type='password')
-        kis_secret=st.text_input('KIS App Secret',value=secret('KIS_APP_SECRET'),type='password')
-        st.caption('REST 조회 시점의 시세입니다. WebSocket 실시간 스트리밍은 아닙니다. 개인 용도 및 이용약관을 확인하세요.')
+    kis_key=secret('KIS_APP_KEY')
+    kis_secret=secret('KIS_APP_SECRET')
     st.divider()
     st.caption('종목 검색 범위')
     if st.button('KRX 전체 종목 목록 불러오기',use_container_width=True):
@@ -137,7 +134,7 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
     st.divider()
-    st.caption('• OpenDART 인증키: https://opendart.fss.or.kr')
+    st.caption('• OpenDART·KIS 인증정보는 Streamlit Secrets에서 관리합니다.')
     st.caption('• 데이터는 실시간 체결 시세가 아닐 수 있습니다.')
     st.caption('• 투자 권유가 아닌 참고용 리서치 도구입니다.')
 
@@ -212,7 +209,7 @@ if prices.empty:
     st.error('주가 데이터 연결에 실패했습니다. 네트워크 또는 데이터 공급처 상태를 확인하세요. 종목코드가 정확한지도 확인해 주세요.')
     if price_error:st.caption(f'기술 메시지: {price_error}')
 if not api_key:
-    st.info('OpenDART 키가 아직 없습니다. 재무제표·실적 분석·공시 항목은 미산출됩니다. 왼쪽에 키를 넣으면 해당 기능이 활성화됩니다.')
+    st.info('OpenDART 인증키가 Secrets에 설정되지 않았습니다. 재무제표·실적 분석·공시 항목은 미산출됩니다. Streamlit 앱 설정의 Secrets에 DART_API_KEY를 추가하세요.')
 elif not corp_code:
     st.warning('이 종목의 DART 고유번호를 찾지 못했습니다. 재무제표·공시 항목을 미산출 처리합니다.')
 if flow_error:st.caption(f'참고: {flow_error}')
