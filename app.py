@@ -121,8 +121,9 @@ with st.sidebar:
     q=st.text_input('종목명 또는 6자리 종목코드',value=st.session_state.get('query','005930'),
                     placeholder='예: 삼성전자 또는 005930')
     api_key=secret('DART_API_KEY')
-    openai_key=st.text_input('OpenAI API 키 (선택)',value=secret('OPENAI_API_KEY'),
-                             type='password',help='AI 의견 버튼을 눌렀을 때만 유료 API가 호출됩니다.')
+    typed_openai_key=st.text_input('OpenAI API 키 (선택)',value='',
+                             type='password',help='입력값은 세션에서 사용합니다. Secrets의 키는 브라우저에 표시하지 않습니다. AI 의견 호출 시 별도 비용이 발생합니다.')
+    openai_key=typed_openai_key.strip() or secret('OPENAI_API_KEY')
     kis_key=secret('KIS_APP_KEY')
     kis_secret=secret('KIS_APP_SECRET')
     st.divider()
