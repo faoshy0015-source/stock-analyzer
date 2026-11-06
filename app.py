@@ -1,4 +1,4 @@
-"""HanaV Stock Analyzer v1.2 — Korea equity research, transparent sources."""
+"""Stock Analyzer v1.3 — independent Korea equity research, transparent sources."""
 from __future__ import annotations
 import json
 from datetime import datetime
@@ -22,26 +22,112 @@ from flow_model import fetch_krx_turnover_context
 from consensus_targets import summarize_targets, naver_published_consensus
 from access_gate import require_login
 
-st.set_page_config(page_title='HanaV Stock Analyzer', page_icon='📊', layout='wide',
+st.set_page_config(page_title='Stock Analyzer · K.H.AHN', page_icon='📊', layout='wide',
                    initial_sidebar_state='expanded')
-COLORS={'navy':'#123452','teal':'#008b83','muted':'#6b7c91','green':'#008b83','red':'#d55055'}
+COLORS={'ink':'#30463d','teal':'#138c78','orange':'#e87d31','amber':'#ecad4c','mint':'#e9f6ee','cream':'#fffaf3','red':'#c95b55'}
 st.markdown('''<style>
+:root{
+  --stock-cream:#fffaf3;--stock-paper:#fffefa;--stock-mint:#eaf7ef;
+  --stock-orange:#e87d31;--stock-teal:#138c78;--stock-ink:#30463d;
+  --stock-border:#eddfce;
+}
 html,body,[class*="css"]{font-family:"Pretendard","Noto Sans KR","Malgun Gothic",sans-serif}
+[data-testid="stAppViewContainer"]{
+  background:linear-gradient(150deg,#fffdf9 0%,#fffaf3 42%,#f7fcf7 100%);
+}
 .block-container{padding-top:1.6rem;max-width:1400px;padding-bottom:3rem}
-[data-testid="stSidebar"]{background:#f1f5f9}
-.brand{padding:22px 25px;background:linear-gradient(115deg,#102942,#1b4a6a);border-radius:15px;color:white;margin-bottom:14px}
-.brand h1{margin:4px 0 4px;font-size:28px;font-weight:800;letter-spacing:-.7px;color:white}
-.brand p{margin:2px 0;color:#cde0ea;font-size:13px}
-.brand .eyebrow{font-size:11px;letter-spacing:2px;color:#77d6ce;font-weight:700}
-.slim{background:#eaf6f5;color:#086760;padding:6px 10px;border-radius:8px;display:inline-block;font-size:12px;font-weight:700}
-.stTabs [data-baseweb="tab-list"]{gap:8px}
-.stTabs [data-baseweb="tab"]{background:#f1f5f9;border-radius:8px;padding:8px 15px}
-.stTabs [aria-selected="true"]{background:#d5eeeb!important;color:#0b6d68!important}
-[data-testid="stMetric"]{background:white;border:1px solid #e3eaf0;border-radius:12px;padding:16px}
-[data-testid="stMetricValue"]{font-size:clamp(1.2rem,1.85vw,1.75rem)!important}
-.tiny{font-size:12px;color:#6b7c91}
-.notes{border-left:4px solid #008b83;background:#f0f8f7;border-radius:7px;padding:13px 17px;line-height:1.7}
-[data-testid="stAlert"]{border-radius:10px}
+[data-testid="stSidebar"]{
+  background:linear-gradient(175deg,#fff8ed 0%,#fdfaf3 49%,#f1f9f3 100%)!important;
+  border-right:1px solid #eadfce;
+}
+[data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2{
+  color:#345a4b!important;
+}
+[data-testid="stSidebar"] [data-testid="stButton"] button{
+  border:1px solid #e8d8bf!important;
+  border-radius:10px!important;
+  color:#365b4a!important;
+  background:#fffefa!important;
+  font-weight:620!important;
+}
+[data-testid="stSidebar"] [data-testid="stButton"] button:hover{
+  border-color:#e6a266!important;background:#fff0dc!important;color:#925018!important;
+}
+[data-testid="stSidebar"] [data-testid="stTextInput"] input{
+  border:1px solid #e4cfb2!important;
+  background:#fffefa!important;border-radius:10px!important;
+}
+[data-testid="stSidebar"] hr{border-color:#ecdfcc}
+.brand{
+  position:relative;overflow:hidden;
+  padding:24px 27px 23px;
+  background:linear-gradient(112deg,#fff0d7 0%,#fff9ea 49%,#e3f6e9 100%);
+  border:1px solid #efdcc4;
+  border-left:5px solid #e87d31;
+  border-radius:16px;
+  box-shadow:0 7px 24px rgba(121,89,49,.07);
+  margin-bottom:15px;
+}
+.brand:after{
+  content:"";position:absolute;width:190px;height:190px;
+  right:-48px;top:-100px;border:1px solid rgba(225,143,64,.23);
+  border-radius:50%;box-shadow:0 0 0 34px rgba(232,125,49,.045),
+    0 0 0 68px rgba(19,140,120,.045);pointer-events:none;
+}
+.brand h1{
+  position:relative;margin:8px 0 6px;font-size:29px;
+  font-weight:820;letter-spacing:-.8px;color:#2e5547;
+}
+.brand p{position:relative;margin:3px 0;color:#64776a;font-size:13px}
+.brand .eyebrow{
+  position:relative;font-size:10px;letter-spacing:1.8px;
+  color:#c66d27;font-weight:800;
+}
+.slim{background:#fff0d8;color:#9a5c22;padding:6px 10px;
+  border-radius:8px;display:inline-block;font-size:12px;font-weight:700}
+.stTabs [data-baseweb="tab-list"]{gap:7px;flex-wrap:wrap}
+.stTabs [data-baseweb="tab"]{
+  background:#f7f3e9;border:1px solid #eee4d5;border-radius:9px;
+  padding:8px 13px;color:#536d5e;
+}
+.stTabs [aria-selected="true"]{
+  background:#ffe7c8!important;color:#9d5014!important;
+  border:1px solid #f2c58d!important;font-weight:740!important;
+}
+.stTabs [data-baseweb="tab-highlight"]{background:#e87d31!important}
+[data-testid="stMetric"]{
+  position:relative;overflow:hidden;background:#fffefa;
+  border:1px solid #efdfcc;border-top:3px solid #e8a15e;
+  border-radius:13px;padding:16px;
+  box-shadow:0 3px 15px rgba(112,85,50,.055);
+}
+[data-testid="stMetricLabel"]{color:#5b6d5e!important}
+[data-testid="stMetricValue"]{
+  font-size:clamp(1.15rem,1.8vw,1.75rem)!important;
+  color:#2d5748!important;font-weight:720!important;
+}
+[data-testid="stMetricDelta"]{font-weight:700}
+[data-testid="stExpander"]{border-color:#e8daca!important;border-radius:11px}
+[data-testid="stDataFrame"]{border:1px solid #eee3d4;border-radius:9px}
+[data-testid="stMain"] [data-testid="stButton"] button:hover,
+[data-testid="stMain"] [data-testid="stLinkButton"] a:hover{
+  border-color:#ec9b52!important;
+}
+input:focus-visible,button:focus-visible{
+  outline-color:#df9146!important;
+}
+.tiny{font-size:12px;color:#758274}
+.notes{
+  border-left:4px solid #df913c;background:#fff4e5;
+  border-radius:8px;padding:14px 18px;line-height:1.75;color:#405347;
+}
+[data-testid="stAlert"]{border-radius:11px}
+h2,h3{color:#345348}
+@media(max-width:760px){
+  .brand{padding:18px 20px}
+  .brand h1{font-size:25px}
+  [data-testid="stMetric"]{padding:12px}
+}
 </style>''',unsafe_allow_html=True)
 
 
@@ -122,15 +208,15 @@ def line_chart(df, cols, title='', ytitle=''):
     for i,(column,label) in enumerate(cols):
         if column not in df:continue
         fig.add_trace(go.Scatter(x=df.index,y=df[column],mode='lines',name=label,
-                                 line={'color':['#008b83','#e5a642','#4c70c5','#9d79b6'][i%4], 'width':2.4}))
+                                 line={'color':['#138c78','#e87d31','#c06f4d','#90a654'][i%4], 'width':2.4}))
     fig.update_layout(title=title,template='plotly_white',height=365,
                       margin=dict(l=12,r=12,t=42,b=15),legend=dict(orientation='h',y=-.18),
                       xaxis_title='',yaxis_title=ytitle,hovermode='x unified')
     return fig
 
 
-st.markdown('''<div class="brand"><div class="eyebrow">HANAV INVESTMENT INTELLIGENCE · VERSION 1.2</div>
-<h1>Stock Analyzer</h1><p>주가 · 기업실적 · 밸류에이션 · 수급 · 뉴스 · 종합 평가</p></div>''',unsafe_allow_html=True)
+st.markdown('''<div class="brand"><div class="eyebrow">INDEPENDENT STOCK RESEARCH · VERSION 1.3</div>
+<h1>Stock Analyzer</h1><p>주가 · 기업실적 · 밸류에이션 · 수급 · 뉴스 · 종합 평가 &nbsp; · &nbsp; CREATED BY K.H.AHN</p></div>''',unsafe_allow_html=True)
 
 with st.sidebar:
     st.title('🔎 종목 분석')
@@ -343,7 +429,7 @@ with left:
     chart=go.Figure()
     for row in scores['rows']:
         chart.add_trace(go.Bar(x=[row['score'] if row['score'] is not None else 0],y=[row['category']],
-                               name=row['category'],orientation='h',marker_color=('#d2a14b' if row['score'] is not None and row.get('covered_weight',0)<row['weight'] else '#008b83' if row['score'] is not None else '#dde4ec'),
+                               name=row['category'],orientation='h',marker_color=('#e8a15e' if row['score'] is not None and row.get('covered_weight',0)<row['weight'] else '#138c78' if row['score'] is not None else '#e5e1d8'),
                                text=(f"{row['score']:.1f}*" if row['score'] is not None
                                      and row.get('covered_weight',0)<row['weight']
                                      else f"{row['score']:.1f}" if row['score'] is not None
@@ -383,9 +469,9 @@ with t1:
         f=go.Figure()
         if mode=='캔들' and all(c in z for c in ('Open','High','Low','Close')):
             f.add_trace(go.Candlestick(x=z.index,open=z['Open'],high=z['High'],low=z['Low'],close=z['Close'],
-                                       name='OHLC',increasing_line_color='#d55055',decreasing_line_color='#287bba'))
-        else:f.add_trace(go.Scatter(x=z.index,y=z['Close'],name='종가',line=dict(color='#123452',width=2)))
-        for ma,col in ((20,'#008b83'),(60,'#d7a248'),(120,'#a178c7')):
+                                       name='OHLC',increasing_line_color='#d86a53',decreasing_line_color='#348c78'))
+        else:f.add_trace(go.Scatter(x=z.index,y=z['Close'],name='종가',line=dict(color='#c57231',width=2)))
+        for ma,col in ((20,'#138c78'),(60,'#e8a15e'),(120,'#97ab5d')):
             f.add_trace(go.Scatter(x=z.index,y=z[f'MA{ma}'],name=f'MA{ma}',line={'color':col,'width':1.5}))
         f.update_layout(height=470,template='plotly_white',xaxis_rangeslider_visible=False,hovermode='x unified',
                         margin=dict(l=10,r=10,t=12,b=10),legend=dict(orientation='h',y=-.17))
@@ -416,7 +502,7 @@ with t2:
             for c in cols:g[c]=pd.to_numeric(g[c],errors='coerce')/1e8
             st.subheader(f'{label} 실적 추이')
             fig=go.Figure()
-            for c,cc in [('revenue','#1d5e82'),('operating_profit','#008b83'),('net_income','#d7a248')]:
+            for c,cc in [('revenue','#db9158'),('operating_profit','#138c78'),('net_income','#9daa59')]:
                 if c in g:fig.add_trace(go.Scatter(x=g.index,y=g[c],mode='lines+markers',name=aliases[c],line=dict(color=cc,width=2)))
             fig.update_layout(height=350,template='plotly_white',margin=dict(l=8,r=8,t=15,b=25),yaxis_title='억원',legend=dict(orientation='h',y=-.2))
             st.plotly_chart(fig,use_container_width=True)
@@ -513,8 +599,8 @@ with t3:
             st.caption('조회 참고: '+'; '.join(valuation_context['errors'][:3]))
         if valuation_context.get('historical_per') or valuation_context.get('historical_pbr'):
             fig=go.Figure()
-            for key,label,color in [('historical_per','과거 월별 PER','#0A8279'),
-                                    ('historical_pbr','과거 월별 PBR','#DD9C3C')]:
+            for key,label,color in [('historical_per','과거 월별 PER','#138c78'),
+                                    ('historical_pbr','과거 월별 PBR','#e87d31')]:
                 vals_hist=valuation_context.get(key) or []
                 if vals_hist:
                     fig.add_trace(go.Box(y=vals_hist,name=label,boxpoints=False,
@@ -534,7 +620,7 @@ with t3:
         else:
             ff=flows.tail(60)/1e8
             f=go.Figure()
-            for name,color in [('외국인','#008b83'),('기관','#d7a248')]:
+            for name,color in [('외국인','#138c78'),('기관','#e8a15e')]:
                 f.add_trace(go.Bar(x=ff.index,y=ff[name],name=name,marker_color=color))
             f.update_layout(barmode='relative',template='plotly_white',height=340,
                             yaxis_title='일별 순매수 (억원)',margin=dict(l=5,r=5,t=10,b=10),legend=dict(orientation='h',y=-.18))
@@ -690,9 +776,9 @@ with t6:
                      f'KIS 조회(KST) {datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")} / 일별 종가 {price_date}' if kis_snapshot else price_date,source_map,
                      target_summary=target_summary,published_target=published_target)
     c1,c2,c3=st.columns(3)
-    c1.download_button('📄 인쇄용 HTML 리포트',html,file_name=f'HanaV_Stock_{resolved["code"]}.html',mime='text/html',use_container_width=True)
-    c2.download_button('🗂️ 점수 스냅샷 JSON',snapshot(resolved,scores,price_date),file_name=f'HanaV_Snapshot_{resolved["code"]}.json',mime='application/json',use_container_width=True)
-    c3.download_button('📋 평가 근거 CSV',score_df[['category','weight','score','confidence']].to_csv(index=False).encode('utf-8-sig'),file_name=f'HanaV_Scores_{resolved["code"]}.csv',mime='text/csv',use_container_width=True)
+    c1.download_button('📄 인쇄용 HTML 리포트',html,file_name=f'StockAnalyzer_{resolved["code"]}.html',mime='text/html',use_container_width=True)
+    c2.download_button('🗂️ 점수 스냅샷 JSON',snapshot(resolved,scores,price_date),file_name=f'StockAnalyzer_Snapshot_{resolved["code"]}.json',mime='application/json',use_container_width=True)
+    c3.download_button('📋 평가 근거 CSV',score_df[['category','weight','score','confidence']].to_csv(index=False).encode('utf-8-sig'),file_name=f'StockAnalyzer_Scores_{resolved["code"]}.csv',mime='text/csv',use_container_width=True)
     st.caption('HTML은 브라우저에서 열어 인쇄 또는 PDF로 저장할 수 있습니다. 외부 고객 전달 전 자료 사용권과 내부 준법 절차를 검토하세요.')
     st.divider()
     st.subheader('이전 분석과 점수 변화 비교')
@@ -716,7 +802,7 @@ with t6:
                     if p is not None and n is not None:
                         st.write(f"{row['category']}: {p:.1f} → {n:.1f} ({n-p:+.1f}점)")
         except Exception:
-            st.error('유효한 HanaV 스냅샷 JSON을 읽지 못했습니다.')
+            st.error('유효한 Stock Analyzer 스냅샷 JSON을 읽지 못했습니다.')
 
 st.divider()
-st.caption('HanaV Stock Analyzer v1.2 | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS · 증권사 리포트: Npay 증권(종목코드 조회)·한경 컨센서스(보조). 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
+st.caption('Stock Analyzer v1.3 · CREATED BY K.H.AHN | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS · 증권사 리포트: Npay 증권(종목코드 조회)·한경 컨센서스(보조). 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
