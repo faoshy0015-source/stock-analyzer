@@ -292,7 +292,7 @@ def png_summary(instrument, scores, price, price_stamp, prices=None,
         lines=(plan.get(key) or ["데이터가 부족하여 확인이 필요합니다."])[:2]
         y=1270
         for statement in lines:
-            y=_draw_text(d,(x+21,y),"• "+statement,ft_small,INK,500,26,4)+12
+            y=_draw_text(d,(x+21,y),"• "+statement,ft_small,INK,500,25,3)+10
     d.rounded_rectangle((42,1511,1158,1660),radius=12,fill="#fff0dc")
     d.text((59,1529),"검토 전 확인",font=ft_mid,fill="#ae642c")
     for i,txt in enumerate((plan.get("checkpoints") or [])[:3]):
