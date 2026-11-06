@@ -102,3 +102,31 @@ def test_negative_cashflow_is_evidence_not_missing():
     cf=next(x for x in r["components"] if x["name"]=="영업현금흐름 전환율")
     assert cf["score"] == 0
     assert cf["covered_weight"] == 6
+
+
+def test_full_score_on_15_points_is_stated_as_partial_not_complete_health():
+    annual=sample_annual()
+    partial=sample_full()
+    partial.pop("interest_expense")
+    partial["operating_cash_flow"]=40
+    profile={"__name__":"삼성전자","__financial_context":partial}
+    result=evaluate(pd.DataFrame(),annual,pd.DataFrame(),
+                    pd.DataFrame(),pd.DataFrame(),profile)
+    health=next(r for r in result["rows"] if r["category"]=="재무건전성")
+    assert health["covered_weight"] == 15
+    assert health["score"] == 100
+    wording=explain(result)
+    assert "확인 15/20점 배점" in wording
+    assert "미확인된 재무 위험" in wording
+    assert "재무건전성(100.0점)" not in wording
+    assert "재무: 확인 지표 안정성 양호 (15/20점 배점)" in diagnostic_summary(result)
+
+
+def test_complete_financial_coverage_has_no_partial_label():
+    annual=sample_annual()
+    profile={"__name__":"삼성전자","__financial_context":sample_full()}
+    result=evaluate(pd.DataFrame(),annual,pd.DataFrame(),
+                    pd.DataFrame(),pd.DataFrame(),profile)
+    health=next(r for r in result["rows"] if r["category"]=="재무건전성")
+    assert health["covered_weight"]==20
+    assert "확인 20/20점 배점" not in explain(result)
