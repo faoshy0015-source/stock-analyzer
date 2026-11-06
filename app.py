@@ -307,12 +307,13 @@ with left:
                         xaxis=dict(range=[0,100],title='각 영역 점수 (0~100)'),
                         yaxis=dict(autorange='reversed'))
     st.plotly_chart(chart,use_container_width=True)
-    st.caption('*표시는 일부 세부 배점만 검증한 잠정 점수입니다. 오른쪽의 실제 반영 배점을 함께 확인하세요.')
+    st.caption('*표시는 일부 세부 배점만 검증한 잠정 점수입니다. 예: 재무건전성 100.0*은 검증된 지표의 평균이 100점이라는 뜻이며, 모든 재무위험이 없다는 의미가 아닙니다.')
 with right:
     st.markdown('**항목별 배점과 근거**')
     st.dataframe(pd.DataFrame([{'영역':r['category'],'배점':r['weight'],
         '실제 반영 배점':r.get('covered_weight',0),
-        '평가':f"{r['score']:.1f}" if r['score'] is not None else '미산출',
+        '확인 지표 평가':(f"{r['score']:.1f} (부분)" if r.get('covered_weight',0)<r['weight']
+                      else f"{r['score']:.1f}") if r['score'] is not None else '미산출',
         '신뢰도':r['confidence']} for r in scores['rows']]),hide_index=True,use_container_width=True)
     with st.expander('점수 계산 원칙 · 산출 근거',expanded=True):
         st.write('점수는 규칙 기반 계산이며 OpenAI 모델이 산출하지 않습니다. 결측 영역·세부 배점은 0점으로 간주하지 않고 실제 검증된 배점으로 재정규화합니다.')
