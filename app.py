@@ -531,7 +531,26 @@ with t3:
                 if len(flows)>=d:
                     fnet=float(flows['외국인'].tail(d).sum()); inet=float(flows['기관'].tail(d).sum())
                     st.caption(f'{d}거래일: 외국인 {won(fnet)} / 기관 {won(inet)}')
-            st.caption('순매수 단위는 거래대금(원)입니다. KRX 조회 가능 범위에 따라 데이터가 달라질 수 있습니다.')
+            st.caption('순매수 단위는 원입니다. KRX 조회 가능 범위에 따라 데이터가 달라질 수 있습니다.')
+        flow_row=next(row for row in scores['rows'] if row['category']=='수급')
+        st.markdown('#### 시가총액·거래대금 보정 수급점수 (15점)')
+        flow_parts=flow_row.get('components',[])
+        if flow_parts:
+            st.dataframe(pd.DataFrame([{
+                '세부 평가':part['name'],'배점':part['weight'],
+                '반영 배점':part['covered_weight'],
+                '점수':f"{part['score']:.1f}" if part['score'] is not None else '미산출',
+            } for part in flow_parts]),hide_index=True,use_container_width=True)
+            st.caption(f"평가된 배점 {flow_row.get('covered_weight',0):g}/15점 · "
+                       "같은 날짜의 거래대금·시총을 기준으로 순매수 규모를 정규화합니다.")
+            with st.expander('순매수 강도 계산 근거'):
+                for part in flow_parts:
+                    st.markdown(f"**{part['name']} ({part['covered_weight']}/{part['weight']}점 배점)**")
+                    st.caption(part['evidence'])
+                    st.caption('출처: '+part['source'])
+                st.caption('외국인+기관 순매수는 일별 KRX 거래대금 기준. '
+                           '공식 거래대금이 없을 경우 종가×거래량 근사치를 사용하고 명시합니다. '
+                           '시총은 보통주 기준일 수 있으며 미수신 항목은 점수에서 제외됩니다.')
 
 with t4:
     st.subheader('공시·뉴스 기반 이벤트 모멘텀')
@@ -592,8 +611,32 @@ with t5:
     st.caption('선택한 종목의 증권사 리포트를 코드로 조회합니다. 제목을 누르면 출처의 상세 페이지에서 원문을 확인할 수 있습니다.')
     st.link_button(f"📑 {resolved['name']} 종목 리포트 직접 보기 (Npay 증권)",
                    NAVER_ITEM_RESEARCH.format(code=resolved['code']),use_container_width=True)
-    with st.spinner('최근 증권사 리포트 조회 중...'):
-        analyst_reports,analyst_error=cached_analyst_reports(resolved['code'],resolved['name'])
+    st.markdown('#### 최근 목표주가 집계')
+    if target_summary['average'] is not None:
+        cc1,cc2,cc3=st.columns(3)
+        cc1.metric('최근 리포트 평균 목표주가',f"{target_summary['average']:,.0f}원")
+        cc2.metric('현재 기준 가격 대비',
+                   f"{target_summary['upside_pct']:+.2f}%" if target_summary['upside_pct'] is not None else '—')
+        cc3.metric('반영 증권사',f"{target_summary['count']}곳")
+        st.dataframe(pd.DataFrame([{
+            '증권사':item['broker'],'발행일':item['date'],
+            '목표주가(원)':item['target'],'제목':item['title'],'원문':item['url'],
+        } for item in target_summary['rows']]),
+            column_config={'원문':st.column_config.LinkColumn('원문 리포트')},
+            hide_index=True,use_container_width=True)
+        st.caption('최근 90일, 증권사별 가장 최근 리포트 1건만 반영한 단순 산술평균입니다. '
+                   '서로 다른 증권사 2곳 이상 기준이며, 수익률이나 적정가치를 보장하지 않습니다.')
+    elif published_target:
+        st.metric('Npay 제공 목표주가 컨센서스 (별도 집계)',
+                  f"{published_target['target']:,.0f}원",
+                  f"{published_target['upside_pct']:+.2f}%" if published_target.get('upside_pct') is not None else None)
+        st.caption(f"기준일 {published_target['date']} · 최근 리포트의 증권사별 산술평균이 아닙니다. "
+                   "집계 표본과 기준기간은 제공처가 명시하지 않아 확인할 수 없습니다.")
+    else:
+        st.info('목표주가 숫자가 확인된 최근 리포트 2개 증권사 이상이 없어 '
+                '평균 목표주가를 산출할 수 없습니다.')
+        if published_target_error:st.caption('제공처 집계 확인: '+published_target_error)
+    st.divider()
     if analyst_reports.empty:
         st.info('이 종목의 리포트를 자동 조회하지 못했습니다. 위 종목 전용 Npay 리서치 링크에서 직접 확인할 수 있습니다.')
         if analyst_error:st.caption(analyst_error)
@@ -631,7 +674,8 @@ with t6:
                 'flows':'KRX(pykrx)' if not flows.empty else '연동 없음',
                 'news':'Google News RSS + OpenDART 공시 이벤트' if not news.empty or not disclosures.empty else '연동 없음'}
     html=render_html(resolved,scores,final_text,kis_snapshot.get('price',price),
-                     f'KIS 조회(KST) {datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")} / 일별 종가 {price_date}' if kis_snapshot else price_date,source_map)
+                     f'KIS 조회(KST) {datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")} / 일별 종가 {price_date}' if kis_snapshot else price_date,source_map,
+                     target_summary=target_summary,published_target=published_target)
     c1,c2,c3=st.columns(3)
     c1.download_button('📄 인쇄용 HTML 리포트',html,file_name=f'HanaV_Stock_{resolved["code"]}.html',mime='text/html',use_container_width=True)
     c2.download_button('🗂️ 점수 스냅샷 JSON',snapshot(resolved,scores,price_date),file_name=f'HanaV_Snapshot_{resolved["code"]}.json',mime='application/json',use_container_width=True)
