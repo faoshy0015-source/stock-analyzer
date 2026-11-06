@@ -1,4 +1,4 @@
-# HanaV Stock Analyzer v1.2
+# Stock Analyzer v1.3 · CREATED BY K.H.AHN
 
 국내 주식 **한 종목 집중 분석**용 Streamlit 웹앱입니다. KOSPI/KOSDAQ 6자리 코드로 검색할 수 있으며, 시세·기술지표·영업이익 추이·간이 재무건전성·외국인/기관 수급·뉴스·DART 공시를 표시하고 **근거 기반 100점 종합 평가**를 계산합니다.
 
@@ -18,6 +18,13 @@ streamlit run app.py
 ```
 
 Python 3.11/3.12 권장. 브라우저에서 보통 `http://localhost:8501`로 열립니다.
+
+
+## UI 디자인: Light Warm Research (v1.3)
+
+메인 앱은 어두운 네이비 배경을 제거한 **밝은 크림·아이보리·연한 민트** 기본 화면을 사용하고, **오렌지(#E87D31)**와 **그린(#138C78)**으로 시각적 우선순위를 구분합니다. 사이드바·상단 헤더·핵심 숫자 카드·활성 탭·차트·인쇄용 HTML을 같은 팔레트로 통일했습니다. 부분 평가 점수는 오렌지 톤으로 표시하고, 결측 데이터 표시는 별도 유지합니다.
+
+공식 금융기관 프로그램으로 오인되지 않도록 앱 메인 상단, 로그인, 내보내는 HTML 리포트에는 **INDEPENDENT STOCK RESEARCH / CREATED BY K.H.AHN** 개인 제작 표기를 사용합니다. 인증과 점수 산식은 이번 UI 개선에서 변경하지 않았습니다.
 
 ## Streamlit Community Cloud 배포
 
