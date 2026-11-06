@@ -16,6 +16,7 @@ from data_sources import (SEED, seed_listing, get_listing, get_corp_codes,
 from scoring import evaluate, explain, pct_change, number
 from report import render_html, snapshot
 from valuation_sources import krx_company_marketcap, fill_valuation, positive
+from valuation_context import fetch_valuation_context
 from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH, NAVER_ITEM_RESEARCH
 
 st.set_page_config(page_title='HanaV Stock Analyzer', page_icon='📊', layout='wide',
@@ -65,6 +66,9 @@ def cached_profile(symbol):return get_profile(symbol)
 
 @st.cache_data(ttl=43200,show_spinner=False)
 def cached_krx_valuation(code,market,key):return krx_company_marketcap(code,market,key)
+
+@st.cache_data(ttl=43200,show_spinner=False)
+def cached_valuation_context(code,market):return fetch_valuation_context(code,market)
 
 @st.cache_data(ttl=3600,show_spinner=False)
 def cached_flow(code):return get_investor_flows(code)
@@ -228,6 +232,9 @@ with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False)
         st.write('KRX 시가총액 기반 밸류에이션 대체 조회')
         krx_cap,krx_valuation_error=cached_krx_valuation(resolved['code'],resolved['market'],krx_key)
     profile=fill_valuation(profile,krx_cap,annual,kis_snapshot)
+    st.write('업종 PER · 과거 5년 밴드 조회')
+    valuation_context=cached_valuation_context(resolved['code'],resolved['market'])
+    profile['__valuation_context']=valuation_context
     incomplete=(incomplete or not positive(profile.get('trailingPE')) or
                 not positive(profile.get('priceToBook')))
     status.update(label='데이터 확인 완료 · 일부 항목 미수신' if incomplete else '분석 데이터 준비 완료',state='complete',expanded=False)
@@ -265,7 +272,7 @@ m1.metric('KIS 조회 현재가' if kis_snapshot else '최근 확인 종가',
           fmt(kis_snapshot.get('price') if kis_snapshot else price,'원',0),
           fmt(kis_snapshot.get('delta') if kis_snapshot else change,'%',2) if (kis_snapshot.get('delta') if kis_snapshot else change) is not None else None)
 m2.metric('잠정 점수' if scores['partial'] else '종합 점수',fmt(scores['total'],' / 100점',1),help='실제 데이터가 있는 항목의 가중평균. 투자 수익률 예측치가 아닙니다.')
-m3.metric('평가 데이터 충족률',f"{scores['coverage']}%",help='전체 100점 배점 중 점수를 산출한 항목의 배점 합계입니다.')
+m3.metric('평가 데이터 충족률',f"{scores['coverage']:g}%",help='전체 100점 배점 중 실제 평가한 배점의 합계이며, 밸류에이션은 세부 항목별로 계산합니다.')
 m4.metric('종합 의견','판단 보류' if scores['coverage'] < 50 else scores['label'])
 if scores['partial']:
     st.warning(f"산출 가능한 평가영역 배점이 {scores['coverage']}%로 제한됩니다. 종합 점수는 잠정치이며 모든 항목이 있는 종목과 직접 비교하지 마세요.")
@@ -289,12 +296,13 @@ with left:
 with right:
     st.markdown('**항목별 배점과 근거**')
     st.dataframe(pd.DataFrame([{'영역':r['category'],'배점':r['weight'],
+        '실제 반영 배점':r.get('covered_weight',0),
         '평가':f"{r['score']:.1f}" if r['score'] is not None else '미산출',
         '신뢰도':r['confidence']} for r in scores['rows']]),hide_index=True,use_container_width=True)
     with st.expander('점수 계산 원칙 · 산출 근거',expanded=True):
         st.write('점수는 규칙 기반 계산이며 OpenAI 모델이 산출하지 않습니다. 결측 영역은 0점으로 간주하지 않고 남은 영역의 배점을 재정규화합니다.')
         for r in scores['rows']:
-            st.markdown(f"**{r['category']} · {fmt(r['score'],'점')} / 배점 {r['weight']}**")
+            st.markdown(f"**{r['category']} · {fmt(r['score'],'점')} / 반영 {r.get('covered_weight',0):g}점 · 전체 배점 {r['weight']}점**")
             for note in r['notes'][:5]:st.caption('• '+note)
             if not r['notes']:st.caption('• 확인 가능한 평가 데이터 없음')
 
@@ -408,7 +416,47 @@ with t3:
         if krx_valuation_error:
             st.caption('KRX 조회 상태: '+krx_valuation_error)
         st.caption('Yahoo Finance 제공 지표는 결측/지연 가능. Forward PER은 제공처 추정치이며 공식 증권사 컨센서스 검증을 대체하지 않습니다.')
-        st.info('1.0 버전 밸류에이션 점수는 PER·PBR 절대수준과 ROE/PBR 보정의 초기 휴리스틱입니다. 과거 PER 밴드와 업종 경쟁사 비교는 후속 버전에서 정식 데이터 확보 후 제공됩니다.')
+        st.markdown('#### 밸류에이션 점수 구성 (총 20점)')
+        valuation_row=next(r for r in scores['rows'] if r['category']=='밸류에이션')
+        components=valuation_row.get('components',[])
+        if components:
+            st.dataframe(pd.DataFrame([{
+                '비교 영역':part['name'],
+                '배점':part['weight'],
+                '반영 배점':part['covered_weight'],
+                '획득 점수':f"{part['earned']:.2f}" if part['earned'] is not None else '미산출',
+                '진행':part['status'],
+            } for part in components]),hide_index=True,use_container_width=True)
+            st.caption(f"실제 평가 {valuation_row.get('covered_weight',0):g}/20점 배점 · "
+                       "누락된 세부 항목은 0점 또는 중립점으로 대체하지 않습니다.")
+            with st.expander('각 항목 평가 근거 · 필요한 데이터'):
+                for part in components:
+                    st.markdown(f"**{part['name']} ({part['weight']}점) · {part['status']}**")
+                    st.caption(part['evidence'])
+                    st.caption('출처/산식: '+part['source'])
+        if valuation_context.get('date'):
+            st.caption('비교 데이터 기준일: '+valuation_context['date']+
+                       (' · KRX 업종: '+str(valuation_context['sector_name'])
+                        if valuation_context.get('sector_name') else ''))
+        if valuation_context.get('errors'):
+            st.caption('조회 참고: '+'; '.join(valuation_context['errors'][:3]))
+        if valuation_context.get('historical_per') or valuation_context.get('historical_pbr'):
+            fig=go.Figure()
+            for key,label,color in [('historical_per','과거 월별 PER','#0A8279'),
+                                    ('historical_pbr','과거 월별 PBR','#DD9C3C')]:
+                vals_hist=valuation_context.get(key) or []
+                if vals_hist:
+                    fig.add_trace(go.Box(y=vals_hist,name=label,boxpoints=False,
+                                         marker_color=color))
+            fig.update_layout(template='plotly_white',height=280,
+                              margin=dict(l=0,r=0,t=15,b=5),
+                              yaxis_title='PER·PBR (배, 서로 다른 척도)')
+            st.plotly_chart(fig,use_container_width=True)
+            st.caption('박스그래프는 과거 값의 분포입니다. PER과 PBR의 배수 크기는 직접 비교하지 마세요.')
+        st.caption('평가기준: 업종 PER 비교 6점 + 과거 밴드 5점 + ROE 보정 PBR 5점 + '
+                   '동기준 Forward PER 4점. KRX 업종은 넓은 업종분류이며 PER과 ROE/PBR은 '
+                   '수학적으로 연관되어 중복 정보가 포함될 수 있습니다. '
+                   '전망 컨센서스 제공처가 없으면 Forward PER 4점은 평가에서 제외됩니다.')
     with vc2:
         st.subheader('외국인·기관 순매수')
         if flows.empty:st.warning('KRX 수급 정보 미수신. 해당 항목은 총점 계산에서 제외됩니다.')
