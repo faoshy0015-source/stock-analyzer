@@ -249,6 +249,21 @@ prev=indicator.get('prev')
 change=pct_change(price,prev)
 price_date=indicator.get('asof','확인 불가')
 
+# Each broker contributes no more than its most recent report within 90 days.
+# Quote date is explicit because Yahoo/FDR is not a live-stream current price.
+with st.spinner('최근 리포트 목표주가와 증권사별 표본 확인 중...'):
+    analyst_reports,analyst_error=cached_analyst_reports(resolved['code'],resolved['name'])
+quoted_price=kis_snapshot.get('price') if kis_snapshot else price
+quoted_date=(datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat()
+             if kis_snapshot else price_date)
+target_summary=summarize_targets(analyst_reports,quoted_price,quoted_date)
+published_target={};published_target_error=''
+if target_summary['average'] is None:
+    published_target,published_target_error=cached_published_consensus(resolved['code'])
+    if published_target and target_summary.get('price'):
+        published_target['upside_pct']=round(
+            (published_target['target']/target_summary['price']-1)*100,2)
+
 st.subheader(f"{resolved['name']}  ·  {resolved['code']}")
 st.caption(f"{resolved['market']}  |  최종 확인 종가일 {price_date}  |  시세: {price_source or '연동 불가'}  |  분석 실행(KST): {datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M')}")
 
@@ -280,6 +295,30 @@ m3.metric('평가 데이터 충족률',f"{scores['coverage']:g}%",help='전체 1
 m4.metric('종합 의견','판단 보류' if scores['coverage'] < 50 else scores['label'])
 if scores['partial']:
     st.warning(f"산출 가능한 평가영역 배점이 {scores['coverage']}%로 제한됩니다. 종합 점수는 잠정치이며 모든 항목이 있는 종목과 직접 비교하지 마세요.")
+
+st.markdown('#### 증권사 목표주가 비교')
+if target_summary['average'] is not None:
+    a1,a2,a3=st.columns(3)
+    a1.metric('최근 90일 평균 목표주가',f"{target_summary['average']:,.0f}원",
+              help='증권사별 최신 1건 · 목표가를 명시한 증권사 2곳 이상')
+    a2.metric('가격 대비 상승여력',
+              f"{target_summary['upside_pct']:+.2f}%" if target_summary['upside_pct'] is not None else '—',
+              help='(평균 목표주가 / 조회 시점 가격 - 1) × 100. 수익률 예측이 아닙니다.')
+    a3.metric('반영 증권사 수',f"{target_summary['count']}곳")
+    st.caption(f"기준 가격 {fmt(target_summary.get('price'),'원',0)}"
+               f" ({'KIS 조회 시점 가격' if kis_snapshot else '최종 확인 종가'}, {target_summary.get('price_asof') or '날짜 확인 불가'})"
+               " · 리포트 발행 최근 90일 · 중복 증권사 제외 · 가격·목표가의 수정주가 반영 여부 주의")
+elif published_target:
+    a1,a2=st.columns(2)
+    a1.metric('Npay 제공 평균 목표주가 (별도 집계)',f"{published_target['target']:,.0f}원",
+              help='표시된 최근 리포트를 앱에서 평균 낸 값이 아닙니다. 제공처에서 집계한 별도 컨센서스입니다.')
+    a2.metric('가격 대비 상승여력',
+              f"{published_target['upside_pct']:+.2f}%" if published_target.get('upside_pct') is not None else '—')
+    st.caption(f"공급처 집계 기준일 {published_target['date']} · 증권사 표본 수/집계기간 미확인"
+               " · 앱의 최근 리포트 산술평균과 다름 · 원문·목표주가 변동 여부 확인 필요")
+else:
+    st.caption('목표주가를 명시한 최근 90일의 서로 다른 증권사 2곳 이상을 확인하지 못해'
+               ' 평균 목표가·상승여력을 표시하지 않습니다. 리포트 탭의 원문에서 직접 확인할 수 있습니다.')
 
 st.markdown('### 종합 분석')
 st.info(explain(scores))
