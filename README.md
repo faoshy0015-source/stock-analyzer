@@ -26,12 +26,25 @@ Python 3.11/3.12 권장. 브라우저에서 보통 `http://localhost:8501`로 �
 3. Streamlit Cloud **App settings > Secrets**에 필요한 인증정보를 등록합니다. OpenDART와 KIS 인증키는 화면에 입력하지 않으며 서버 측 Secrets에서만 읽습니다.
 
 ```toml
+APP_PASSWORD = "본인이 설정한 앱 접속 비밀번호"
 DART_API_KEY = "본인_OpenDART_인증키"
 KIS_APP_KEY = ""
 KIS_APP_SECRET = ""
 ```
 
 DART·KIS 인증정보는 **서버 측에서만 사용**됩니다. KRX 조회는 현재 별도 KRX 키 없이 `pykrx`를 활용하며, Supabase는 이 버전에 연동되지 않았습니다. `secrets.toml` 원본은 GitHub에 절대 올리지 마세요. 이 버전은 OpenAI 키 입력·호출 기능을 제거했으며 종합 의견과 이벤트 평가는 별도 생성형 AI 비용 없이 규칙 기반으로 계산됩니다.
+
+
+## 앱 접속 비밀번호 (Streamlit Secrets)
+
+이 앱은 시작할 때 **비밀번호를 확인한 후에만 종목 조회·분석 화면을 열도록** 구성되어 있습니다.
+
+- Streamlit Cloud → **App settings → Secrets**에 `APP_PASSWORD = "설정한비밀번호"`를 입력하고 저장합니다.
+- 기존에 `LOGIN_PASSWORD`, `ACCESS_PASSWORD`, `PASSWORD`, `APP_PASS`, `APP_PW`, `APP_ACCESS_PASSWORD`, `STOCK_ANALYZER_PASSWORD`, `ADMIN_PASSWORD`로 설정했다면 동일한 값을 인식합니다. 여러 이름이 동시에 있으면 `APP_PASSWORD`가 우선입니다.
+- 비밀번호를 입력해 로그인하면 **해당 브라우저의 현재 Streamlit 세션에서만** 인증 상태가 유지됩니다. 왼쪽 **로그아웃** 버튼을 누르면 다시 인증해야 합니다.
+- 비밀번호가 없거나 Secrets에 저장되지 않았다면 **공개 모드로 전환하지 않고 접근을 차단**합니다.
+- 실제 비밀번호를 소스 코드, README, GitHub Issues, 공개 ZIP이나 콘솔 로그에 올리지 마세요. 비밀번호 입력은 암호형 필드이며 서버에서 일정 시간 비교 방식으로 확인합니다.
+- 이 방식은 **소규모 공동사용을 위한 공용 비밀번호 보호**입니다. 사용자별 권한·강한 서버 측 시도 횟수 제한·SSO가 필요한 고객용 공개 서비스는 별도의 인증 체계가 적합합니다.
 
 ## 처음 사용하는 순서
 
