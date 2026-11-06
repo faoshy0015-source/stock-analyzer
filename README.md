@@ -1,4 +1,4 @@
-# HanaV Stock Analyzer v1.1
+# HanaV Stock Analyzer v1.2
 
 국내 주식 **한 종목 집중 분석**용 Streamlit 웹앱입니다. KOSPI/KOSDAQ 6자리 코드로 검색할 수 있으며, 시세·기술지표·영업이익 추이·간이 재무건전성·외국인/기관 수급·뉴스·DART 공시를 표시하고 **근거 기반 100점 종합 평가**를 계산합니다.
 
