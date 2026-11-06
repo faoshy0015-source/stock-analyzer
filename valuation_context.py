@@ -160,7 +160,7 @@ def fetch_valuation_context(code, market, history_years=5):
     try:
         start=(refdate - timedelta(days=365 * int(history_years)+10)).strftime("%Y%m%d")
         end=(refdate - timedelta(days=1)).strftime("%Y%m%d")
-        historical=stock.get_market_fundamental_by_date(start,end,code,freq="m")
+        historical=stock.get_market_fundamental_by_date(start,end,code,freq="d")
         result.update(_history_monthly(historical))
     except Exception as exc:
         result["errors"].append("과거 5년 PER/PBR 조회 실패: " + type(exc).__name__)
