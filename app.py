@@ -15,7 +15,7 @@ from data_sources import (SEED, seed_listing, get_listing, get_corp_codes,
                           get_kis_access_token, get_kis_quote)
 from scoring import evaluate, explain, pct_change, number
 from report import render_html, snapshot
-from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH
+from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH, NAVER_ITEM_RESEARCH
 
 st.set_page_config(page_title='HanaV Stock Analyzer', page_icon='📊', layout='wide',
                    initial_sidebar_state='expanded')
@@ -418,11 +418,13 @@ with t4:
 
 with t5:
     st.subheader('최근 애널리스트 리포트')
-    st.caption('증권사에서 발행한 기업분석 리포트의 제목·발행일·작성자·원문 링크입니다. 리포트 원문은 발행처에서 열립니다.')
+    st.caption('선택한 종목의 증권사 리포트를 코드로 조회합니다. 제목을 누르면 출처의 상세 페이지에서 원문을 확인할 수 있습니다.')
+    st.link_button(f"📑 {resolved['name']} 종목 리포트 직접 보기 (Npay 증권)",
+                   NAVER_ITEM_RESEARCH.format(code=resolved['code']),use_container_width=True)
     with st.spinner('최근 증권사 리포트 조회 중...'):
         analyst_reports,analyst_error=cached_analyst_reports(resolved['code'],resolved['name'])
     if analyst_reports.empty:
-        st.info('최근 6개월 내 확인된 애널리스트 리포트를 자동으로 찾지 못했습니다. 출처의 검색·접근 정책에 따라 자동 수집이 제한될 수 있습니다.')
+        st.info('이 종목의 리포트를 자동 조회하지 못했습니다. 위 종목 전용 Npay 리서치 링크에서 직접 확인할 수 있습니다.')
         if analyst_error:st.caption(analyst_error)
     else:
         st.caption(f"최근 6개월 내 확인된 기업 리포트 {len(analyst_reports)}건 · 발행일 최신순")
@@ -433,11 +435,12 @@ with t5:
             rpt_broker=str(report_row['broker'] or '발행기관 미표기')
             rpt_analyst=str(report_row['analyst'] or '')
             rpt_target=str(report_row['target_price'] or '')
+            rpt_source=str(report_row.get('source','') or '')
             if rpt_link.startswith(('https://','http://')):
                 st.link_button(f"📄 {rpt_title}",rpt_link,help='원문 제공 사이트에서 열기',use_container_width=True)
             else:
                 st.write(rpt_title)
-            rpt_detail=f"발행 {rpt_date} · {rpt_broker}"
+            rpt_detail=f"발행 {rpt_date} · {rpt_broker}" + (f" · {rpt_source}" if rpt_source else '')
             if rpt_analyst:rpt_detail+=f" · {rpt_analyst}"
             if rpt_target:rpt_detail+=f" · 목표주가 {rpt_target}"
             st.caption(rpt_detail)
@@ -446,7 +449,7 @@ with t5:
     st.markdown('**전체 리포트 출처에서 직접 검색**')
     col_hk,col_nv=st.columns(2)
     col_hk.link_button('한경 컨센서스 리포트 검색',HANKYUNG_PORTAL,use_container_width=True)
-    col_nv.link_button('Npay 증권 리서치',NAVER_RESEARCH,use_container_width=True)
+    col_nv.link_button('Npay 증권 리서치',NAVER_ITEM_RESEARCH.format(code=resolved['code']),use_container_width=True)
     st.caption('보고서의 PDF를 앱 서버에 저장하거나 재배포하지 않습니다. 자동 수집 실패 시 원문 제공처에서 종목명을 검색하세요.')
 
 with t6:
@@ -489,4 +492,4 @@ with t6:
             st.error('유효한 HanaV 스냅샷 JSON을 읽지 못했습니다.')
 
 st.divider()
-st.caption('HanaV Stock Analyzer v1.0 | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS · 증권사 리포트: 한경 컨센서스 공개 원문 링크. 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
+st.caption('HanaV Stock Analyzer v1.0 | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS · 증권사 리포트: Npay 증권(종목코드 조회)·한경 컨센서스(보조). 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
