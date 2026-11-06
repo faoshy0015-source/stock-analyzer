@@ -186,8 +186,13 @@ def evaluate(prices, annual, quarterly, flow, news, profile):
 def explain(result):
     usable=[r for r in result['rows'] if r['score'] is not None]
     if not usable:return '평가에 필요한 기초 데이터가 부족합니다. 시세 및 재무 데이터 연결 상태를 확인하세요.'
-    strong=sorted(usable,key=lambda r:r['score'],reverse=True)
-    weak=sorted(usable,key=lambda r:r['score'])
+    # Do not announce an area as a decisive strength from one available
+    # submetric (e.g. excellent debt ratio but no cash-flow/interest evidence).
+    substantial=[r for r in usable
+                 if r.get('covered_weight',0)>=0.60*r['weight']]
+    compared=substantial if substantial else usable
+    strong=sorted(compared,key=lambda r:r['score'],reverse=True)
+    weak=sorted(compared,key=lambda r:r['score'])
     best=strong[0]; risk=weak[0]
     obs=' '.join(best['notes'][:2]) if best['notes'] else ''
     neg=' '.join(risk['notes'][:2]) if risk['notes'] else ''
@@ -196,4 +201,35 @@ def explain(result):
          f"주의해서 확인할 분야는 {risk['category']}({risk['score']:.0f}점)입니다. {neg}")
     if result['partial']:
         msg+=' 일부 항목은 데이터 미확보로 제외됐으므로 잠정 점수이며 종목 간 단순 비교를 피해야 합니다.'
+    finance=next((r for r in result['rows'] if r['category']=='재무건전성'),None)
+    if finance and finance.get('covered_weight',0)<finance['weight']:
+        msg+=f" 재무건전성은 {finance.get('covered_weight',0):g}/{finance['weight']}점 배점만 검증된 부분 평가입니다."
     return msg
+
+
+def diagnostic_summary(result):
+    """Short investment dashboard summary, never overclaim on partial evidence."""
+    by_category={r['category']:r for r in result.get('rows',[])}
+    rules=[
+        ('실적·성장성', '실적', (65, 40), ('성장 양호','성장 둔화','혼조')),
+        ('밸류에이션', '가격', (65, 40), ('상대가격 매력','가치평가 부담','중립권')),
+        ('수급', '수급', (60, 40), ('매수 우위','매도 우위','혼조')),
+        ('재무건전성', '재무', (70, 35), ('안정성 양호','위험 신호','확인 필요')),
+        ('주가 추세', '추세', (65, 40), ('상승 우세','약세','혼조')),
+    ]
+    segments=[]
+    for key,label,(strong,weak),(up,down,neutral) in rules:
+        r=by_category.get(key) or {}
+        score=r.get('score')
+        weight=r.get('weight') or 0
+        used=r.get('covered_weight') or 0
+        if score is None or weight<=0 or used/weight<0.60:
+            value='평가자료 제한'
+        elif score>=strong:
+            value=up
+        elif score<weak:
+            value=down
+        else:
+            value=neutral
+        segments.append(f'{label}: {value}')
+    return '  |  '.join(segments)
