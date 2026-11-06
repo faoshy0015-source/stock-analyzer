@@ -74,7 +74,7 @@ def test_score_chart_marks_partial_and_missing():
 def test_target_chart_uses_consensus_and_has_valid_empty_fallback():
     assert "155,000원" in target_chart_svg(135000,target())
     assert "135,000원" in target_chart_svg(135000,target())
-    assert "주가" not in target_chart_svg(None)
+    assert "<svg" not in target_chart_svg(None)
     assert "검증 가능한 목표가" in target_chart_svg(None)
     fallback=target_chart_svg(100000,{},{"target":120000})
     assert "Npay" in fallback and "별도 집계" in fallback
