@@ -145,7 +145,7 @@ def naver_published_consensus(code,today=None):
         if not target or not created or not now or (now-created).days<0 or (now-created).days>120:
             return {}, "제공처 평균 목표주가가 없거나 기준일이 120일보다 오래되었습니다."
         return {"target":target,"date":created.isoformat(),
-                "source":"Npay 증권 제공 평균 (표본·기간 검증 불가)",
+                "source":"Npay 증권 제공 평균 (별도 집계 · 표본·기간 검증 불가)",
                 "link":NAVER_ITEM_RESEARCH.format(code=code)}, ""
     except requests.RequestException as exc:
         return {},f"제공처 접속 실패: {type(exc).__name__}"
