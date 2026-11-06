@@ -17,7 +17,7 @@ from scoring import evaluate, explain, diagnostic_summary, pct_change, number
 from report import render_html, snapshot
 from trade_plan import conditional_trade_plan
 from proposal_visuals import png_summary
-from valuation_sources import krx_company_marketcap, fill_valuation, positive
+from valuation_sources import krx_company_marketcap, fill_valuation, positive, display_valuation_ratios
 from valuation_context import fetch_valuation_context
 from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH, NAVER_ITEM_RESEARCH
 from flow_model import fetch_krx_turnover_context
@@ -357,8 +357,9 @@ with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False)
     st.write('업종 PER · 과거 5년 밴드 조회')
     valuation_context=cached_valuation_context(resolved['code'],resolved['market'])
     profile['__valuation_context']=valuation_context
-    incomplete=(incomplete or not positive(profile.get('trailingPE')) or
-                not positive(profile.get('priceToBook')))
+    display_ratios=display_valuation_ratios(profile,valuation_context)
+    incomplete=(incomplete or display_ratios['PER']['value'] is None or
+                display_ratios['PBR']['value'] is None)
     status.update(label='데이터 확인 완료 · 일부 항목 미수신' if incomplete else '분석 데이터 준비 완료',state='complete',expanded=False)
 
 scores=evaluate(prices,annual,quarterly,flows,news,profile,disclosures)
@@ -597,16 +598,20 @@ with t3:
     vc1,vc2=st.columns(2)
     with vc1:
         st.subheader('밸류에이션')
-        approx=profile.get('__valuation_approx',[])
-        vals=[('PER (DART·KRX 간이)' if 'PER' in approx else 'PER (최근 실적)',profile.get('trailingPE'),'배'),
+        vals=[
+              ('PER (KRX 확인값)' if display_ratios['PER']['kind']=='krx' else 'PER (별도 산출값)',
+               display_ratios['PER']['value'],'배'),
               ('Forward PER (Yahoo 추정 · 별도 기준)',profile.get('forwardPE'),'배'),
               ('추정 EPS (Yahoo 추정 · 별도 기준)',profile.get('forwardEps'),'원'),
-              ('PBR (DART·KRX 간이)' if 'PBR' in approx else 'PBR',profile.get('priceToBook'),'배'),
+              ('PBR (KRX 확인값)' if display_ratios['PBR']['kind']=='krx' else 'PBR (별도 산출값)',
+               display_ratios['PBR']['value'],'배'),
               ('ROE (DART 간이)' if profile.get('__roe_approx') else 'ROE (외부 제공)',(number(profile.get('returnOnEquity')) or 0)*100 if profile.get('returnOnEquity') is not None else None,'%'),
               ('시가총액 (외부 제공 또는 KRX)',profile.get('marketCap'),'원')]
         for label,val,unit in vals:
             st.write(f'**{label}:** {won(val) if unit=="원" and "시가총액" in label else fmt(val,unit,0 if unit=="원" else 2)}')
-        st.caption('현재 지표 출처: '+str(profile.get('__valuation_source') or '확인 불가'))
+        st.caption('PER 출처: '+display_ratios['PER']['source']+' · PBR 출처: '+display_ratios['PBR']['source'])
+        st.caption('ROE·시가총액 출처(별도): '+str(profile.get('__valuation_source') or '확인 불가')+
+                   ' · 수치마다 산정 시점과 회계 기준이 다를 수 있습니다.')
         if profile.get('__krx_marketcap_date'):
             st.caption('시가총액 원천: 한국거래소 통계정보 (KRX OPEN API)')
             classes=profile.get('__krx_share_classes',[])
@@ -616,8 +621,9 @@ with t3:
             st.warning(profile['__valuation_approx_note'])
         if profile.get('__roe_approx_note'):
             st.caption('간이 ROE 참고: '+profile['__roe_approx_note'])
-        if not positive(profile.get('trailingPE')) or not positive(profile.get('priceToBook')):
-            st.info('PER·PBR이 일부 미산출입니다. KRX 인증키는 Secrets의 KRX_API_KEY(또는 KRX_AUTH_KEY 등)로 읽습니다. KRX 공식 일별매매정보 API 활용신청이 필요하며, DART 연간 실적이 없으면 간이 계산을 하지 않습니다.')
+        if display_ratios['PER']['value'] is None or display_ratios['PBR']['value'] is None:
+            st.info('KRX 투자지표와 Yahoo/KIS·DART 대체 지표에서도 PER·PBR 일부를 확인하지 못했습니다. '
+                    '조회 기준일과 원천 데이터 상태를 확인하세요. 누락값은 임의로 채우지 않습니다.')
         if krx_valuation_error:
             st.caption('KRX 조회 상태: '+krx_valuation_error)
         st.caption('Yahoo Finance 제공 지표는 결측/지연 가능. Forward PER은 제공처 추정치이며 공식 증권사 컨센서스 검증을 대체하지 않습니다.')
