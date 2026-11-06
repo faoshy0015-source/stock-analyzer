@@ -224,11 +224,12 @@ with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False)
     incomplete=bool(prices.empty or (api_key and annual.empty) or flows.empty)
     krx_cap={};krx_valuation_error=''
     if krx_key and (not positive(profile.get('trailingPE')) or
-                    not positive(profile.get('priceToBook')) or
-                    not positive(profile.get('marketCap'))):
+                    not positive(profile.get('priceToBook'))):
         st.write('KRX 시가총액 기반 밸류에이션 대체 조회')
         krx_cap,krx_valuation_error=cached_krx_valuation(resolved['code'],resolved['market'],krx_key)
     profile=fill_valuation(profile,krx_cap,annual,kis_snapshot)
+    incomplete=(incomplete or not positive(profile.get('trailingPE')) or
+                not positive(profile.get('priceToBook')))
     status.update(label='데이터 확인 완료 · 일부 항목 미수신' if incomplete else '분석 데이터 준비 완료',state='complete',expanded=False)
 
 scores=evaluate(prices,annual,quarterly,flows,news,profile)
@@ -394,6 +395,7 @@ with t3:
             st.write(f'**{label}:** {won(val) if unit=="원" else fmt(val,unit,2)}')
         st.caption('현재 지표 출처: '+str(profile.get('__valuation_source') or '확인 불가'))
         if profile.get('__krx_marketcap_date'):
+            st.caption('시가총액 원천: 한국거래소 통계정보 (KRX OPEN API)')
             classes=profile.get('__krx_share_classes',[])
             st.caption('KRX 시가총액 기준일: '+profile['__krx_marketcap_date']+
                        (' · 합산 주식코드: '+', '.join(map(str,classes)) if classes else ''))
