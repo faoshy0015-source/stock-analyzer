@@ -135,7 +135,8 @@ with st.sidebar:
     kis_key=secret('KIS_APP_KEY')
     kis_secret=secret('KIS_APP_SECRET')
     krx_key=(secret('KRX_API_KEY') or secret('KRX_AUTH_KEY') or
-             secret('KRX_OPEN_API_KEY') or secret('KRX_KEY') or secret('AUTH_KEY'))
+             secret('KRX_OPEN_API_KEY') or secret('KRX_OPENAPI_KEY') or
+             secret('KRX_KEY') or secret('AUTH_KEY'))
     st.divider()
     st.caption('종목 검색 범위')
     if st.button('KRX 전체 종목 목록 불러오기',use_container_width=True):
@@ -387,7 +388,7 @@ with t3:
         vals=[('PER (DART·KRX 간이)' if 'PER' in approx else 'PER (최근 실적)',profile.get('trailingPE'),'배'),
               ('Forward PER (외부 제공)',profile.get('forwardPE'),'배'),
               ('PBR (DART·KRX 간이)' if 'PBR' in approx else 'PBR',profile.get('priceToBook'),'배'),
-              ('ROE (외부 제공)',(number(profile.get('returnOnEquity')) or 0)*100 if profile.get('returnOnEquity') is not None else None,'%'),
+              ('ROE (DART 간이)' if profile.get('__roe_approx') else 'ROE (외부 제공)',(number(profile.get('returnOnEquity')) or 0)*100 if profile.get('returnOnEquity') is not None else None,'%'),
               ('시가총액 (외부 제공 또는 KRX)',profile.get('marketCap'),'원')]
         for label,val,unit in vals:
             st.write(f'**{label}:** {won(val) if unit=="원" else fmt(val,unit,2)}')
@@ -398,6 +399,8 @@ with t3:
                        (' · 합산 주식코드: '+', '.join(map(str,classes)) if classes else ''))
         if profile.get('__valuation_approx_note'):
             st.warning(profile['__valuation_approx_note'])
+        if profile.get('__roe_approx_note'):
+            st.caption('간이 ROE 참고: '+profile['__roe_approx_note'])
         if not positive(profile.get('trailingPE')) or not positive(profile.get('priceToBook')):
             st.info('PER·PBR이 일부 미산출입니다. KRX 인증키는 Secrets의 KRX_API_KEY(또는 KRX_AUTH_KEY 등)로 읽습니다. KRX 공식 일별매매정보 API 활용신청이 필요하며, DART 연간 실적이 없으면 간이 계산을 하지 않습니다.')
         if krx_valuation_error:
