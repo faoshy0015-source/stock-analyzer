@@ -566,17 +566,46 @@ with t2:
         st.caption('금융업(은행·증권·보험 등)은 제조업용 건전성 기준을 적용하지 않으며 전용 평가가 마련될 때까지 보류합니다.')
 
 with t3:
+    st.markdown('#### 한국거래소(KRX) 투자지표 · Npay와 다른 데이터 제공처')
+    krx_date=str(valuation_context.get('date') or '')
+    krx_specs=[
+        ('PER',valuation_context.get('krx_per'),'배',2),
+        ('EPS',valuation_context.get('krx_eps'),'원',0),
+        ('PBR',valuation_context.get('krx_pbr'),'배',2),
+        ('BPS',valuation_context.get('krx_bps'),'원',0),
+        ('배당수익률',valuation_context.get('krx_dividend_yield'),'%',2),
+        ('주당배당금(DPS)',valuation_context.get('krx_dps'),'원',0),
+    ]
+    if krx_date and any(number(value) is not None for _,value,_,_ in krx_specs):
+        krx_columns=st.columns(3)
+        for i,(label,value,unit,decimals) in enumerate(krx_specs):
+            with krx_columns[i%3]:
+                st.metric(label,fmt(value,unit,decimals) if number(value) is not None else '미확인')
+        st.caption(
+            f"출처: 한국거래소 투자지표(KRX/pykrx) · 조회 기준일 {krx_date}. "
+            "EPS·BPS와 배당 지표는 Npay·FnGuide와 회계연도, 연결/별도, 주식수 조정, "
+            "시세 기준일이 달라 수치가 일치하지 않을 수 있습니다. "
+            "표시한 EPS는 애널리스트 추정 EPS가 아닙니다."
+        )
+    else:
+        st.info('KRX PER·EPS·PBR·BPS·배당 투자지표를 확인하지 못했습니다. '
+                'Npay 화면의 수치를 복사해 대신 채우지 않으며, Yahoo·DART 지표는 아래에 별도 표시합니다.')
+        for error in valuation_context.get('errors') or []:
+            st.caption('KRX 지표 조회 상태: '+str(error))
+    st.caption('추정 EPS·PER은 별도 전망치이며 검증 가능한 제공처 값이 없으면 미산출로 유지합니다.')
+    st.divider()
     vc1,vc2=st.columns(2)
     with vc1:
         st.subheader('밸류에이션')
         approx=profile.get('__valuation_approx',[])
         vals=[('PER (DART·KRX 간이)' if 'PER' in approx else 'PER (최근 실적)',profile.get('trailingPE'),'배'),
-              ('Forward PER (외부 제공)',profile.get('forwardPE'),'배'),
+              ('Forward PER (Yahoo 추정 · 별도 기준)',profile.get('forwardPE'),'배'),
+              ('추정 EPS (Yahoo 추정 · 별도 기준)',profile.get('forwardEps'),'원'),
               ('PBR (DART·KRX 간이)' if 'PBR' in approx else 'PBR',profile.get('priceToBook'),'배'),
               ('ROE (DART 간이)' if profile.get('__roe_approx') else 'ROE (외부 제공)',(number(profile.get('returnOnEquity')) or 0)*100 if profile.get('returnOnEquity') is not None else None,'%'),
               ('시가총액 (외부 제공 또는 KRX)',profile.get('marketCap'),'원')]
         for label,val,unit in vals:
-            st.write(f'**{label}:** {won(val) if unit=="원" else fmt(val,unit,2)}')
+            st.write(f'**{label}:** {won(val) if unit=="원" and "시가총액" in label else fmt(val,unit,0 if unit=="원" else 2)}')
         st.caption('현재 지표 출처: '+str(profile.get('__valuation_source') or '확인 불가'))
         if profile.get('__krx_marketcap_date'):
             st.caption('시가총액 원천: 한국거래소 통계정보 (KRX OPEN API)')
