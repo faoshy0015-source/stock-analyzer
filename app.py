@@ -297,7 +297,7 @@ with left:
     chart=go.Figure()
     for row in scores['rows']:
         chart.add_trace(go.Bar(x=[row['score'] if row['score'] is not None else 0],y=[row['category']],
-                               name=row['category'],orientation='h',marker_color='#008b83' if row['score'] is not None else '#dde4ec',
+                               name=row['category'],orientation='h',marker_color=('#d2a14b' if row['score'] is not None and row.get('covered_weight',0)<row['weight'] else '#008b83' if row['score'] is not None else '#dde4ec'),
                                text=(f"{row['score']:.1f}*" if row['score'] is not None
                                      and row.get('covered_weight',0)<row['weight']
                                      else f"{row['score']:.1f}" if row['score'] is not None
@@ -307,7 +307,7 @@ with left:
                         xaxis=dict(range=[0,100],title='각 영역 점수 (0~100)'),
                         yaxis=dict(autorange='reversed'))
     st.plotly_chart(chart,use_container_width=True)
-    st.caption('*표시는 일부 세부 배점만 검증한 잠정 점수입니다. 예: 재무건전성 100.0*은 검증된 지표의 평균이 100점이라는 뜻이며, 모든 재무위험이 없다는 의미가 아닙니다.')
+    st.caption('청록색은 해당 영역 전체 배점 평가, 황금색(*)은 일부 배점만 평가, 회색은 미산출을 의미합니다. 재무건전성 100.0*도 미확인된 위험이 없다는 뜻은 아닙니다.')
 with right:
     st.markdown('**항목별 배점과 근거**')
     st.dataframe(pd.DataFrame([{'영역':r['category'],'배점':r['weight'],
