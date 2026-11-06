@@ -122,6 +122,60 @@ def get_corp_codes(api_key):
     return get_corp_codes_diagnostic(api_key)[0]
 
 
+
+def diagnose_dart(api_key, corp_code='00126380'):
+    """On-demand connection check. Safe for UI: never returns API keys, URLs or payload data."""
+    if not api_key:
+        return {'상태':'설정 안 됨','상세':'Streamlit Secrets에 DART_API_KEY가 없습니다.'}
+    key = str(api_key).strip()
+    if len(key) != 40:
+        return {'상태':'키 형식 확인 필요',
+                '상세':f'OpenDART 키는 공식적으로 40자리여야 합니다. 현재 Secrets 값의 길이는 {len(key)}자리입니다.'}
+    try:
+        response = requests.get(f'{DART}/company.json',
+                                params={'crtfc_key':key,'corp_code':corp_code},
+                                headers=HEADERS,timeout=(8,15))
+        if response.status_code != 200:
+            return {'상태':'HTTP 접속 오류','상세':f'DART 서버 HTTP {response.status_code} 응답'}
+        result=response.json()
+        status=str(result.get('status',''))
+        if status != '000':
+            return {'상태':'API 거부', '코드':status,
+                    '상세':DART_STATUS_MESSAGES.get(status,'OpenDART가 요청을 거부했습니다.')}
+    except requests.exceptions.Timeout:
+        return {'상태':'연결 시간 초과','상세':'Streamlit Cloud에서 DART 요청이 제한시간을 초과했습니다.'}
+    except requests.exceptions.RequestException as exc:
+        return {'상태':'통신 오류','상세':f'요청 오류 유형: {type(exc).__name__}'}
+    except (ValueError,TypeError):
+        return {'상태':'응답 오류','상세':'DART 기업개황 응답이 JSON 형식이 아닙니다.'}
+
+    # 기업개황 성공과 재무제표 조회 성공은 별개이므로 각각 확인한다.
+    try:
+        r=requests.get(f'{DART}/fnlttSinglAcnt.json',
+                       params={'crtfc_key':key,'corp_code':corp_code,
+                               'bsns_year':'2024','reprt_code':'11011'},
+                       headers=HEADERS,timeout=(8,15))
+        if r.status_code != 200:
+            return {'상태':'인증 성공·재무 조회 실패',
+                    '상세':f'기업개황 API 정상, 재무제표 API HTTP {r.status_code}'}
+        body=r.json()
+        status=str(body.get('status',''))
+        if status == '000':
+            count=len(body.get('list') or [])
+            return {'상태':'정상','상세':f'기업개황 인증 성공 · 2024년 연간 재무계정 {count}건 응답'}
+        return {'상태':'인증 성공·재무 조회 제한','코드':status,
+                '상세':DART_STATUS_MESSAGES.get(status,'재무제표 API 오류')}
+    except requests.exceptions.Timeout:
+        return {'상태':'인증 성공·재무 시간 초과',
+                '상세':'기업개황은 정상이나 재무제표 API 요청 시간이 초과되었습니다.'}
+    except requests.exceptions.RequestException as exc:
+        return {'상태':'인증 성공·재무 통신 오류',
+                '상세':f'재무제표 API 요청 오류 유형: {type(exc).__name__}'}
+    except (ValueError,TypeError):
+        return {'상태':'인증 성공·재무 응답 오류',
+                '상세':'재무제표 API 응답이 JSON 형식이 아닙니다.'}
+
+
 def find_instrument(search, listing):
     """Returns {code,name,market} or None. Exact codes do not require a listing."""
     q = str(search).strip()
