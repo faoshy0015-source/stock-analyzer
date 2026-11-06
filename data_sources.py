@@ -379,6 +379,78 @@ def dart_financials(api_key, corp_code, years=5):
     return a,q,scope
 
 
+
+# Full annual DART statements expose cash flow and liquidity accounts which
+# are generally absent from fnlttSinglAcnt (major income/balance accounts).
+# Match exact XBRL IDs before localized account names, keeping IF and CF scope.
+_FULL_FY_IDS = {
+    'operating_cash_flow': (
+        {'ifrs-full_CashFlowsFromUsedInOperatingActivities',
+         'ifrs_CashFlowsFromUsedInOperatingActivities'},
+        {'영업활동현금흐름', '영업활동으로인한현금흐름',
+         '영업활동으로부터의현금흐름', '영업활동으로인한순현금흐름'},
+        {'CF'},
+    ),
+    'current_assets': (
+        {'ifrs-full_CurrentAssets', 'ifrs_CurrentAssets'}, {'유동자산'}, {'BS'},
+    ),
+    'current_liabilities': (
+        {'ifrs-full_CurrentLiabilities', 'ifrs_CurrentLiabilities'}, {'유동부채'}, {'BS'},
+    ),
+    'interest_expense': (
+        {'ifrs-full_InterestExpense', 'ifrs_InterestExpense'},
+        {'이자비용'}, {'IS', 'CIS'},
+    ),
+}
+
+
+def _full_fy_metrics(items):
+    """Select precise FY cash-flow / liquidity / interest-account evidence.
+
+    Reject totals from the wrong statement and do not equate all 'finance
+    costs' with interest expense. A real zero is evidence, not a missing value.
+    """
+    metrics = {}
+    rows = [r for r in (items or []) if isinstance(r, dict)]
+    for field, (ids, names, statements) in _FULL_FY_IDS.items():
+        relevant = [r for r in rows if r.get('sj_div') in statements]
+        by_id = [r for r in relevant if str(r.get('account_id') or '').strip() in ids]
+        by_name = [r for r in relevant if _label_account(r) in names]
+        for r in by_id + by_name:
+            if r.get('account_detail') not in (None, '', '-'):
+                # A dimension-specific subtotal must not replace the main value.
+                continue
+            amt = _amount(r)
+            if amt is not None:
+                metrics[field] = amt
+                break
+    return metrics
+
+
+def dart_full_fy_metrics(api_key, corp_code, year, fs_scope):
+    """Fetch 1 full annual consolidated/separate statement for solvency scoring.
+
+    Year must refer to a submitted audited FY, selected from the annual
+    dataframe already successfully read. Never create made-up line items.
+    """
+    if not api_key or not corp_code or not str(year).isdigit() or len(str(year)) != 4:
+        return {}
+    if fs_scope not in ('CFS', 'OFS'):
+        return {}
+    data = _dart_get(api_key, 'fnlttSinglAcntAll.json',
+                     corp_code=corp_code, bsns_year=str(year),
+                     reprt_code='11011', fs_div=fs_scope)
+    rows = data.get('list') if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return {}
+    metrics = _full_fy_metrics(rows)
+    if metrics:
+        metrics['year'] = str(year)
+        metrics['fs_scope'] = fs_scope
+        metrics['source'] = 'OpenDART 전체 재무제표'
+    return metrics
+
+
 def get_news(query, limit=20):
     """Headline + publisher from public Google News RSS, no paywalled article scraping."""
     try:
