@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from math import isfinite
 
 import pandas as pd
 
@@ -19,6 +20,46 @@ def _num(value):
     except (ValueError, TypeError, OverflowError):
         pass
     return None
+
+
+def _raw_finite(value, positive_only=False):
+    """Keep verified KRX values, including negative EPS and zero dividends.
+
+    A missing or nonfinite value remains None; never replace with Yahoo/forecast.
+    """
+    try:
+        v=float(str(value).replace(",", "").strip())
+        if not isfinite(v) or (positive_only and v<=0):
+            return None
+        return v
+    except (ValueError,TypeError,OverflowError):
+        return None
+
+
+def _issuer_indicators(frame, code):
+    """Read only the issuer's actual KRX EPS/BPS/DPS/DIV fields.
+
+    These are not Npay/FnGuide figures and may differ in reference periods.
+    """
+    if frame is None or frame.empty or str(code) not in frame.index.astype(str):
+        return {}
+    chosen=frame.loc[frame.index.astype(str)==str(code)]
+    if chosen.empty:
+        return {}
+    row=chosen.iloc[0]
+    value_map={
+        "krx_eps":("EPS",False),
+        "krx_bps":("BPS",True),
+        "krx_dps":("DPS",False),
+        "krx_dividend_yield":("DIV",False),
+    }
+    result={}
+    for target,(source,positive_only) in value_map.items():
+        value=_raw_finite(row.get(source),positive_only=positive_only)
+        # Share yield and dividends cannot be negative; EPS may be.
+        if value is not None and (source=="EPS" or value>=0):
+            result[target]=value
+    return result
 
 
 def _per_and_pbr(frame, code):
@@ -137,16 +178,16 @@ def fetch_valuation_context(code, market, history_years=5):
             if fundamentals is None or fundamentals.empty:
                 continue
             current_per, current_pbr = _per_and_pbr(fundamentals, code)
-            if current_per is None and current_pbr is None:
+            issuer=_issuer_indicators(fundamentals, code)
+            if current_per is None and current_pbr is None and not issuer:
                 continue
             result.update({"date": day.isoformat(), "krx_per":current_per,
                            "krx_pbr":current_pbr})
-            row = fundamentals.loc[code] if code in fundamentals.index.astype(str) else None
-            if row is not None:
-                eps = _num(row.get("EPS"))
-                bps = _num(row.get("BPS"))
-                if eps and bps:
-                    result["krx_roe_proxy"] = eps / bps
+            result.update(issuer)
+            eps=_raw_finite(result.get("krx_eps"))
+            bps=_raw_finite(result.get("krx_bps"),positive_only=True)
+            if eps is not None and bps:
+                result["krx_roe_proxy"] = eps / bps
             try:
                 sector = stock.get_market_sector_classifications(stamp, market)
                 result.update(_sector_peers(fundamentals, sector, code))
