@@ -5,11 +5,9 @@ import re
 import pandas as pd
 from valuation_model import evaluate_valuation
 from financial_health_model import evaluate_financial_health
+from event_momentum import evaluate_event_momentum
 
 WEIGHTS = {'실적·성장성':25,'밸류에이션':20,'수급':15,'재무건전성':20,'주가 추세':10,'뉴스 모멘텀':10}
-GOOD_WORDS = ('수주','흑자전환','증익','상향','성장','신제품','수출 증가','계약 체결','자사주 소각','신고가','실적 개선','증설')
-BAD_WORDS = ('적자전환','하향','감익','실적 악화','유상증자','횡령','배임','소송','상장폐지','리콜','과징금','자금난','매출 감소')
-
 
 def number(v):
     try:
@@ -79,7 +77,7 @@ def score_record(label,points,parts,comments,confidence='보통'):
             'notes':comments,'confidence':confidence if parts else '미산출', 'tests':len(parts)}
 
 
-def evaluate(prices, annual, quarterly, flow, news, profile):
+def evaluate(prices, annual, quarterly, flow, news, profile, disclosures=None):
     profile=profile or {}; indicators=get_indicators(prices)
     results=[]
     # PERFORMANCE
@@ -162,18 +160,24 @@ def evaluate(prices, annual, quarterly, flow, news, profile):
         rsi=indicators['rsi14'];tests.append((50 if rsi<30 or rsi>70 else 65,1))
         notes.append(f'RSI(14) {rsi:.1f} (극단 구간은 방향성 판단 주의)')
     results.append(score_record('주가 추세',0,tests,notes))
-    # NEWS: keyword-only high uncertainty; deliberately not LLM sentiment
-    tests=[];notes=[]
-    if news is not None and not news.empty and 'title' in news:
-        titles=[str(t) for t in news['title'].head(20)]
-        pos=sum(bool(any(word in t for word in GOOD_WORDS)) for t in titles)
-        neg=sum(bool(any(word in t for word in BAD_WORDS)) for t in titles)
-        if pos+neg>0:
-            tests.append((clip(50+30*(pos-neg)/max(pos+neg,3)),1))
-            notes.append(f'최근 뉴스 제목 {len(titles)}건 중 긍정 키워드 {pos}건·부정 키워드 {neg}건 (문맥 이해 X)')
-        else:
-            notes.append(f'뉴스 {len(titles)}건 수집, 방향성 키워드 부족 → 점수 보류')
-    results.append(score_record('뉴스 모멘텀',0,tests,notes,'낮음 · 제목 키워드만 판단'))
+    # NEWS/REGULATORY MOMENTUM: 6-point DART filings, 4-point corroborated
+    # title signals. Unverified events never become invented neutral scores.
+    momentum=evaluate_event_momentum(disclosures,news,
+                                      str(profile.get('__name__') or ''))
+    notes=[momentum['note']]
+    for item in momentum['components']:
+        notes.append(f"{item['name']}: {item['status']} "
+                     f"({item['covered_weight']:g}/{item['weight']}점 배점) · {item['evidence']}")
+    results.append({
+        'category':'뉴스 모멘텀','weight':WEIGHTS['뉴스 모멘텀'],
+        'covered_weight':momentum['covered_weight'],
+        'score':momentum['score'],'notes':notes,
+        'confidence':momentum['confidence'],
+        'tests':sum(1 for x in momentum['components'] if x['covered_weight']>0),
+        'components':momentum['components'],
+        'events':momentum['events'],
+        'available_points':momentum['earned'],
+    })
 
     available=[r for r in results if r['score'] is not None and r.get('covered_weight',0)>0]
     covered=round(sum(r['covered_weight'] for r in available),1)
