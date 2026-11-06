@@ -12,6 +12,8 @@ import pandas as pd
 import requests
 
 DART = 'https://opendart.fss.or.kr/api'
+# OpenDART 공식 개발가이드에 확인 가능한 상장사 고유번호만 긴급 대체 매핑.
+DART_KNOWN_CORP_CODES = {'005930': '00126380'}
 HEADERS = {'User-Agent': 'HanaVStockAnalyzer/1.0 (private research application)'}
 SEED = {
  '005930': ('삼성전자','KOSPI'), '000660': ('SK하이닉스','KOSPI'),
@@ -61,23 +63,63 @@ def seed_listing():
     return pd.DataFrame([{'code':c,'name':v[0],'market':v[1]} for c,v in SEED.items()])
 
 
-def get_corp_codes(api_key):
+DART_STATUS_MESSAGES = {
+    '010': '등록되지 않은 OpenDART 인증키입니다.',
+    '011': 'OpenDART에서 사용할 수 없는 인증키입니다.',
+    '012': 'OpenDART 접근 제한 IP입니다.',
+    '013': '조회된 데이터가 없습니다.',
+    '014': 'DART 파일이 존재하지 않습니다.',
+    '020': 'OpenDART API 요청 한도 초과입니다.',
+    '800': 'OpenDART 시스템 점검 중입니다.',
+    '901': 'OpenDART 인증키 사용자 정보 갱신이 필요합니다.',
+}
+
+
+def get_corp_codes_diagnostic(api_key):
+    """(상장법인 목록, 비밀키를 포함하지 않는 오류 설명)."""
     if not api_key:
-        return pd.DataFrame()
+        return pd.DataFrame(), 'DART_API_KEY가 Secrets에 없습니다.'
     try:
-        resp = requests.get(f'{DART}/corpCode.xml', params={'crtfc_key':api_key}, timeout=20, headers=HEADERS)
+        resp = requests.get(f'{DART}/corpCode.xml', params={'crtfc_key':api_key},
+                            timeout=(8, 35), headers=HEADERS)
         resp.raise_for_status()
-        with zipfile.ZipFile(BytesIO(resp.content)) as z:
-            xml_file = next(n for n in z.namelist() if n.endswith('.xml'))
+        stream = BytesIO(resp.content)
+        if not zipfile.is_zipfile(stream):
+            # DART API 오류는 정상 ZIP 대신 XML 메시지로 돌아올 수 있습니다.
+            try:
+                error = ET.fromstring(resp.content)
+                code = (error.findtext('status') or error.findtext('.//status') or '').strip()
+                reason = DART_STATUS_MESSAGES.get(code, 'OpenDART에서 기업코드 ZIP 대신 오류 응답을 반환했습니다.')
+                return pd.DataFrame(), f'{reason} (DART 코드 {code or "미확인"})'
+            except ET.ParseError:
+                return pd.DataFrame(), 'OpenDART 기업코드 응답이 ZIP 형식이 아닙니다.'
+        with zipfile.ZipFile(stream) as z:
+            xml_file = next((n for n in z.namelist() if n.lower().endswith('.xml')), None)
+            if not xml_file:
+                return pd.DataFrame(), 'OpenDART ZIP 안에 기업코드 XML이 없습니다.'
             root = ET.fromstring(z.read(xml_file))
         rows = []
-        for element in root.findall('list'):
+        for element in root.findall('.//list'):
             code = (element.findtext('stock_code') or '').strip()
-            if re.fullmatch(r'\d{6}', code):
-                rows.append({'code':code, 'corp_code':element.findtext('corp_code'), 'name':element.findtext('corp_name')})
-        return pd.DataFrame(rows).drop_duplicates('code') if rows else pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
+            corp = (element.findtext('corp_code') or '').strip()
+            if re.fullmatch(r'\d{6}', code) and re.fullmatch(r'\d{8}', corp):
+                rows.append({'code':code,'corp_code':corp,
+                             'name':(element.findtext('corp_name') or '').strip()})
+        if not rows:
+            return pd.DataFrame(), 'OpenDART 기업 목록에서 상장사 종목코드를 찾지 못했습니다.'
+        return pd.DataFrame(rows).drop_duplicates('code'), ''
+    except requests.exceptions.Timeout:
+        return pd.DataFrame(), 'OpenDART 기업코드 요청 시간이 초과되었습니다.'
+    except requests.exceptions.RequestException as exc:
+        # Requests의 오류 문자열에는 인증키를 포함한 URL이 들어갈 수 있어 노출 금지.
+        return pd.DataFrame(), f'OpenDART 기업코드 연결 오류 ({type(exc).__name__}).'
+    except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile, StopIteration) as exc:
+        return pd.DataFrame(), f'OpenDART 기업코드 해석 오류 ({type(exc).__name__}).'
+
+
+def get_corp_codes(api_key):
+    """기존 호출용 호환 인터페이스."""
+    return get_corp_codes_diagnostic(api_key)[0]
 
 
 def find_instrument(search, listing):
