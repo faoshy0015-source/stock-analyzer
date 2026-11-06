@@ -4,6 +4,7 @@ import math
 import re
 import pandas as pd
 from valuation_model import evaluate_valuation
+from financial_health_model import evaluate_financial_health
 
 WEIGHTS = {'실적·성장성':25,'밸류에이션':20,'수급':15,'재무건전성':20,'주가 추세':10,'뉴스 모멘텀':10}
 GOOD_WORDS = ('수주','흑자전환','증익','상향','성장','신제품','수출 증가','계약 체결','자사주 소각','신고가','실적 개선','증설')
@@ -98,7 +99,7 @@ def evaluate(prices, annual, quarterly, flow, news, profile):
         notes.append(f'최근 분기 영업이익 {qop/1e8:,.0f}억원 (직전 분기 {qopprev/1e8:,.0f}억원)')
     results.append(score_record('실적·성장성',0,tests,notes))
     # VALUATION: four weighted dimensions, each scored only with real data.
-    valuation=evaluate_valuation(profile,profile.get('__valuation_context') or {})
+    valuation=evaluate_valuation(profile,profile.get('__valuation_context') or {},annual)
     val_notes=[valuation['note']]
     for part in valuation['components']:
         val_notes.append(f"{part['name']}: {part['status']} "
@@ -129,28 +130,25 @@ def evaluate(prices, annual, quarterly, flow, news, profile):
             positive=int((streak>0).sum());tests.append((positive/len(streak)*100,2))
             notes.append(f'최근 {len(streak)}거래일 합산 순매수일 {positive}일')
     results.append(score_record('수급',0,tests,notes,'보통 · 순매수 규모의 시총 보정 미반영'))
-    # SOLVENCY
-    tests=[];notes=[]
-    assets,_=last_pair(annual,'assets'); debt,_=last_pair(annual,'liabilities'); eq,_=last_pair(annual,'equity')
-    business_type=' '.join(str(profile.get(k,'')) for k in ('industry','sector','__name__')).lower()
-    is_financial=any(s in business_type for s in ('bank','insurance','financial','은행','보험','금융','증권'))
-    if not is_financial and eq is not None and debt is not None and eq>0:
-        debt_ratio=debt/eq*100
-        tests.append((interp(debt_ratio,300,40),2));notes.append(f'부채비율 {debt_ratio:.1f}%')
-    elif is_financial:
-        notes.append('금융업: 일반 제조업 부채비율 평가 제외')
-    if assets and eq is not None and assets>0:
-        equity_ratio=eq/assets*100
-        if not is_financial:
-            tests.append((interp(equity_ratio,15,70),1))
-        notes.append(f'자기자본비율 {equity_ratio:.1f}%')
-    operating_cash,_=last_pair(annual,'operating_cash_flow')
-    if not is_financial and op is not None and op>0 and operating_cash is not None:
-        cash_ratio=operating_cash/op
-        tests.append((interp(cash_ratio,0,1.3),1))
-        notes.append(f'영업현금흐름/영업이익 {cash_ratio:.2f}배 (현금 창출력 참고)')
-    notes.append('ROE는 재무건전성에서 중복 채점하지 않고 가치평가에만 활용')
-    results.append(score_record('재무건전성',0,tests,notes,'보통 · 업종별 정밀 보정 전'))
+    # SOLVENCY: evaluate separate leverage, cash generation, interest cost,
+    # and short-term liquidity evidence. Never award a full 20-weight for just
+    # a single strong debt ratio or for bank capital based on industrial rules.
+    fin=evaluate_financial_health(annual,profile.get('__financial_context') or {},profile)
+    fin_notes=[fin['note']]
+    for part in fin['components']:
+        fin_notes.append(
+            f"{part['name']}: {part['status']} "
+            f"({part['covered_weight']:g}/{part['weight']}점) · {part['evidence']}"
+        )
+    results.append({
+        'category':'재무건전성','weight':WEIGHTS['재무건전성'],
+        'covered_weight':fin['covered_weight'],
+        'score':fin['score'],'notes':fin_notes,
+        'confidence':fin['confidence'],
+        'tests':sum(1 for x in fin['components'] if x['covered_weight']>0),
+        'components':fin['components'],
+        'available_points':fin['earned']
+    })
     # TECHNICAL
     tests=[];notes=[];last=indicators.get('last')
     ma20=indicators.get('ma20');ma60=indicators.get('ma60');ma120=indicators.get('ma120')
