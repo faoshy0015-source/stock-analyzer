@@ -102,7 +102,7 @@ def summarize_targets(reports,last_price,price_asof=None,today=None,days=90):
         if not isfinite(price) or price<=0:price=None
     except (TypeError,ValueError,OverflowError):
         price=None
-    pricedate=_today(price_asof)
+    pricedate=_today(price_asof) if price_asof is not None else None
     fresh_price=price is not None and pricedate is not None and 0 <= (now-pricedate).days<=7
     upside=round((average/price-1)*100,2) if average is not None and fresh_price else None
     return {
