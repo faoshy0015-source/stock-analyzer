@@ -423,7 +423,11 @@ def get_kis_quote(code,app_key,app_secret,token):
         o=data.get('output') or {}
         price=float(o.get('stck_prpr',0) or 0)
         return {'price':price,'delta':number_string(o.get('prdy_ctrt')),
-                'volume':number_string(o.get('acml_vol'))} if price>0 else {}
+                'volume':number_string(o.get('acml_vol')),
+                'per':number_string(o.get('per')),
+                'pbr':number_string(o.get('pbr')),
+                'eps':number_string(o.get('eps')),
+                'bps':number_string(o.get('bps'))} if price>0 else {}
     except Exception:return {}
 
 
