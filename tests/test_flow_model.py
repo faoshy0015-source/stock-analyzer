@@ -17,7 +17,9 @@ def test_full_flow_uses_four_subscores_fifteen_points():
     r=evaluate_flow_normalized(f,d)
     assert sum(FLOW_WEIGHTS.values())==15
     assert r["covered_weight"]==15
-    assert r["score"]==100
+    # Strong turnover flows need not imply maximum cap-normalized demand:
+    # 20*100 / 500000 = 0.4% of market cap -> the third subscore is 70.
+    assert r["score"]==92
     assert [part["weight"] for part in r["components"]]==[4,5,4,2]
     assert "거래대금" in r["components"][0]["evidence"]
 
