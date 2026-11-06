@@ -6,6 +6,7 @@ import pandas as pd
 from valuation_model import evaluate_valuation
 from financial_health_model import evaluate_financial_health
 from event_momentum import evaluate_event_momentum
+from flow_model import evaluate_flow_normalized
 
 WEIGHTS = {'실적·성장성':25,'밸류에이션':20,'수급':15,'재무건전성':20,'주가 추세':10,'뉴스 모멘텀':10}
 
@@ -114,20 +115,24 @@ def evaluate(prices, annual, quarterly, flow, news, profile, disclosures=None):
         'components':valuation['components'],
         'available_points':valuation['earned']
     })
-    # FLOW
-    tests=[];notes=[]
-    if flow is not None and len(flow)>=5 and all(k in flow for k in ('외국인','기관')):
-        for period,w in ((5,1),(20,2),(60,1)):
-            part=flow.tail(period)
-            if len(part)<period:continue
-            net=float(part[['외국인','기관']].sum().sum())
-            val=55 if net>0 else 45 if net<0 else 50
-            tests.append((val,w));notes.append(f'최근 {period}거래일 외국인+기관 순매수 합계 {net/1e8:+,.0f}억원')
-        streak=flow[['외국인','기관']].sum(axis=1).tail(10)
-        if len(streak)>=5:
-            positive=int((streak>0).sum());tests.append((positive/len(streak)*100,2))
-            notes.append(f'최근 {len(streak)}거래일 합산 순매수일 {positive}일')
-    results.append(score_record('수급',0,tests,notes,'보통 · 순매수 규모의 시총 보정 미반영'))
+    # FLOW: daily matched net turnover and market-cap normalization (15 pts).
+    # A stock's absolute net buying amount is not comparable across companies.
+    normalized_flow=evaluate_flow_normalized(
+        flow, profile.get('__daily_turnover'), prices, profile.get('marketCap'))
+    flow_notes=[normalized_flow['note']]
+    for part in normalized_flow['components']:
+        flow_notes.append(f"{part['name']}: {part['status']} "
+                          f"({part['covered_weight']:g}/{part['weight']}점) · {part['evidence']}")
+    results.append({
+        'category':'수급','weight':WEIGHTS['수급'],
+        'covered_weight':normalized_flow['covered_weight'],
+        'score':normalized_flow['score'],
+        'notes':flow_notes,'confidence':normalized_flow['confidence'],
+        'tests':sum(1 for x in normalized_flow['components'] if x['covered_weight']>0),
+        'components':normalized_flow['components'],
+        'metrics':normalized_flow['metrics'],
+        'available_points':normalized_flow['earned'],
+    })
     # SOLVENCY: evaluate separate leverage, cash generation, interest cost,
     # and short-term liquidity evidence. Never award a full 20-weight for just
     # a single strong debt ratio or for bank capital based on industrial rules.
