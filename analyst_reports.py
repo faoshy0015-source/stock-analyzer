@@ -186,7 +186,8 @@ def parse_naver_research(payload, code, name):
         d = _research_date(_first_value(entry,
             "publishedAt", "publishDate", "publishedDate", "researchDate",
             "date", "dateTime", "reportDate", "writtenDate", "issueDate",
-            "registerDate", "regDate", "createdAt", "createdDate"))
+            "registerDate", "regDate", "createdAt", "createdDate",
+            "publishAt", "issuedAt", "reportPubDate", "writeDate", "createDate"))
         if not d:
             continue
         # The Npay endpoint is already server-filtered by itemCodes. If the
@@ -248,6 +249,9 @@ def get_analyst_reports(code, name, limit=15):
         all_rows = get_naver_reports(code, name)
         if not all_rows:
             status.append("Npay 증권 응답에 해당 종목 리포트가 없습니다.")
+    except requests.HTTPError as exc:
+        code = getattr(exc.response, "status_code", None)
+        status.append(f"Npay 증권 HTTP {code or '오류'} (제공처 접근·경로 확인 필요)")
     except (requests.RequestException, ValueError, TypeError) as exc:
         status.append(f"Npay 증권 조회 실패: {type(exc).__name__}")
     # Avoid multiple redundant requests when a code-filtered result succeeded.
