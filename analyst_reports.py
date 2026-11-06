@@ -177,7 +177,7 @@ def parse_naver_research(payload, code, name):
             continue
         raw_nid = _first_value(entry, "nid", "researchId", "id")
         nid = str(raw_nid).strip() if raw_nid is not None else ""
-        if not re.fullmatch(r"\\d{1,18}", nid):
+        if not re.fullmatch(r"\d{1,18}", nid):
             continue
         title = _field_text(_first_value(entry,
             "title", "researchTitle", "researchName", "reportTitle", "subject", "name"))
@@ -239,7 +239,7 @@ def get_analyst_reports(code, name, limit=15):
     consensus listing is a backup. These providers are third-party services
     and may restrict automated access; use their website links if unavailable.
     """
-    if not re.fullmatch(r"\\d{6}", str(code)):
+    if not re.fullmatch(r"\d{6}", str(code)):
         return pd.DataFrame(columns=FIELDS), "잘못된 종목코드"
     name = str(name).strip()
     all_rows = []
