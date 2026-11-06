@@ -15,6 +15,8 @@ from data_sources import (SEED, seed_listing, get_listing, get_corp_codes,
                           get_kis_access_token, get_kis_quote)
 from scoring import evaluate, explain, diagnostic_summary, pct_change, number
 from report import render_html, snapshot
+from trade_plan import conditional_trade_plan
+from proposal_visuals import png_summary
 from valuation_sources import krx_company_marketcap, fill_valuation, positive
 from valuation_context import fetch_valuation_context
 from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH, NAVER_ITEM_RESEARCH
@@ -783,20 +785,64 @@ with t5:
     st.caption('보고서의 PDF를 앱 서버에 저장하거나 재배포하지 않습니다. 자동 수집 실패 시 원문 제공처에서 종목명을 검색하세요.')
 
 with t6:
-    st.subheader('저장 · 보고서 내보내기')
+    st.subheader('저장 · 고객 설명용 리포트')
+    st.caption('인쇄용 HTML에는 주가·점수 그래프와 보유자/신규 검토자별 조건부 전략이 포함됩니다. '
+               'PNG는 한 장짜리 요약 이미지이며, JSON은 그림이 아닌 과거 분석 기록입니다.')
     final_text=explain(scores)
     source_map={'price':('KIS REST 시세 + '+price_source) if kis_snapshot else (price_source or '연동 없음'),
                 'financial':f'OpenDART {fs_scope}' if not annual.empty else '연동 없음',
                 'flows':'KRX(pykrx)' if not flows.empty else '연동 없음',
                 'news':'Google News RSS + OpenDART 공시 이벤트' if not news.empty or not disclosures.empty else '연동 없음'}
-    html=render_html(resolved,scores,final_text,kis_snapshot.get('price',price),
-                     f'KIS 조회(KST) {datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")} / 일별 종가 {price_date}' if kis_snapshot else price_date,source_map,
-                     target_summary=target_summary,published_target=published_target)
-    c1,c2,c3=st.columns(3)
-    c1.download_button('📄 인쇄용 HTML 리포트',html,file_name=f'StockAnalyzer_{resolved["code"]}.html',mime='text/html',use_container_width=True)
-    c2.download_button('🗂️ 점수 스냅샷 JSON',snapshot(resolved,scores,price_date),file_name=f'StockAnalyzer_Snapshot_{resolved["code"]}.json',mime='application/json',use_container_width=True)
-    c3.download_button('📋 평가 근거 CSV',score_df[['category','weight','score','confidence']].to_csv(index=False).encode('utf-8-sig'),file_name=f'StockAnalyzer_Scores_{resolved["code"]}.csv',mime='text/csv',use_container_width=True)
-    st.caption('HTML은 브라우저에서 열어 인쇄 또는 PDF로 저장할 수 있습니다. 외부 고객 전달 전 자료 사용권과 내부 준법 절차를 검토하세요.')
+    price_for_report=kis_snapshot.get('price',price)
+    report_stamp=(f'KIS 조회(KST) {datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")}'
+                  f' / 일별 종가 {price_date}' if kis_snapshot else price_date)
+    trade_plan=conditional_trade_plan(scores,prices,target_summary,published_target)
+    html=render_html(resolved,scores,final_text,price_for_report,report_stamp,source_map,
+                     target_summary=target_summary,published_target=published_target,
+                     prices=prices,trade_plan=trade_plan)
+    with st.expander('보고서에 포함되는 보유자·신규 매수 검토 전략 보기',expanded=False):
+        p1,p2=st.columns(2)
+        with p1:
+            st.markdown('**기존 보유자 관점**')
+            for line in trade_plan['holder']:st.write('• '+line)
+        with p2:
+            st.markdown('**신규 매수 검토자 관점**')
+            for line in trade_plan['new_buyer']:st.write('• '+line)
+        st.markdown('**주요 체크포인트**')
+        for line in trade_plan['checkpoints']:st.write('• '+line)
+        st.caption(trade_plan['disclaimer'])
+    try:
+        summary_png=png_summary(resolved,scores,price_for_report,report_stamp,
+                                prices=prices,plan=trade_plan,
+                                target_summary=target_summary,published_target=published_target)
+    except (ImportError,OSError,ValueError,TypeError) as exc:
+        summary_png=None
+        st.warning(f'PNG 생성에 실패했습니다: {type(exc).__name__}. '
+                   '인쇄용 HTML과 JSON은 정상적으로 내려받을 수 있습니다.')
+    c1,c2=st.columns(2)
+    c1.download_button('📄 차트·전략 포함 인쇄용 HTML',html,
+                       file_name=f'StockAnalyzer_Proposal_{resolved["code"]}.html',
+                       mime='text/html',use_container_width=True)
+    if summary_png:
+        c2.download_button('🖼️ 한 장 요약 이미지 PNG',summary_png,
+                           file_name=f'StockAnalyzer_Summary_{resolved["code"]}.png',
+                           mime='image/png',use_container_width=True)
+        with st.expander('한 장 요약 이미지 미리보기',expanded=False):
+            st.image(summary_png,caption='PNG 요약: 주요 지표·정량점수·주가·조건부 전략',
+                     use_container_width=True)
+    else:
+        c2.button('🖼️ 한 장 요약 이미지 PNG 생성 불가',disabled=True,use_container_width=True)
+    c3,c4=st.columns(2)
+    c3.download_button('🗂️ 점수 기록 JSON (과거 비교용)',
+                       snapshot(resolved,scores,price_date),
+                       file_name=f'StockAnalyzer_Snapshot_{resolved["code"]}.json',
+                       mime='application/json',use_container_width=True)
+    c4.download_button('📋 평가 근거 CSV',
+                       score_df[['category','weight','score','confidence']].to_csv(index=False).encode('utf-8-sig'),
+                       file_name=f'StockAnalyzer_Scores_{resolved["code"]}.csv',
+                       mime='text/csv',use_container_width=True)
+    st.caption('HTML은 브라우저에서 열어 인쇄 또는 PDF로 저장하세요. SVG 차트는 HTML 안에 포함되어 '
+               '오프라인에서도 보입니다. 외부 고객 제공 전 자료 이용권한과 내부 준법 절차를 확인하세요.')
     st.divider()
     st.subheader('이전 분석과 점수 변화 비교')
     old=st.file_uploader('이전에 내려받은 점수 스냅샷 JSON을 업로드하세요',type=['json'])
