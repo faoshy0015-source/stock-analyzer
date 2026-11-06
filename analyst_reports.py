@@ -19,6 +19,7 @@ HANKYUNG_PORTAL = "https://markets.hankyung.com/consensus"
 NAVER_RESEARCH = "https://stock.naver.com/research/company"
 NAVER_ITEM_RESEARCH = "https://stock.naver.com/domestic/stock/{code}/research"
 NAVER_RESEARCH_API = "https://stock.naver.com/api/stockSecurity/researches/v2/company"
+NAVER_MOBILE_INTEGRATION = "https://m.stock.naver.com/api/stock/{code}/integration"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; HanaVStockAnalyzer/1.1; report metadata)",
     "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.7",
@@ -227,10 +228,10 @@ def parse_naver_research(payload, code, name):
 
 
 def get_naver_reports(code, name):
-    """One low-volume read-only request for a single company (max 20 rows)."""
+    """One low-volume read-only request for a single company (10 rows)."""
     resp = requests.get(
         NAVER_RESEARCH_API,
-        params={"itemCodes": code, "index": 0, "size": 20},
+        params={"itemCodes": code, "index": 0, "size": 10},
         headers={**HEADERS, "Accept": "application/json, text/plain, */*",
                  "Referer": NAVER_ITEM_RESEARCH.format(code=code)},
         timeout=(4, 10),
@@ -239,6 +240,44 @@ def get_naver_reports(code, name):
     data = resp.json()
     return parse_naver_research(data, code, name)
 
+
+
+
+def get_naver_mobile_reports(code):
+    """Fallback: only the metadata included in Npay's stock integration JSON.
+
+    Public integration metadata uses researches[].id/tit/bnm/wdt. It generally
+    provides the title, broker and date, but not analyst or target price.
+    """
+    url = NAVER_MOBILE_INTEGRATION.format(code=code)
+    response = requests.get(url, headers=HEADERS, timeout=(4, 10))
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        return []
+    items = payload.get("researches") or []
+    if not isinstance(items, list):
+        return []
+    rows = []
+    for report in items[:25]:
+        if not isinstance(report, dict):
+            continue
+        raw_id = report.get("id")
+        nid = str(raw_id).strip() if raw_id is not None else ""
+        title = _field_text(report.get("tit"))
+        d = _research_date(report.get("wdt"))
+        if not (re.fullmatch(r"\d{1,18}", nid) and title and d):
+            continue
+        rows.append({
+            "date": d,
+            "title": title,
+            "broker": _field_text(report.get("bnm")),
+            "analyst": "",
+            "target_price": "",
+            "url": f"https://m.stock.naver.com/domestic/stock/{code}/research/{nid}",
+            "source": "Npay 증권 종목요약",
+        })
+    return rows
 
 
 def get_analyst_reports(code, name, limit=15):
@@ -258,11 +297,22 @@ def get_analyst_reports(code, name, limit=15):
         if not all_rows:
             status.append("Npay 증권 응답에서 표시 가능한 종목 리포트를 확인하지 못했습니다.")
     except requests.HTTPError as exc:
-        code = getattr(exc.response, "status_code", None)
-        status.append(f"Npay 증권 HTTP {code or '오류'} (제공처 접근·경로 확인 필요)")
+        http_status = getattr(exc.response, "status_code", None)
+        status.append(f"Npay 증권 HTTP {http_status or '오류'} (제공처 접근·경로 확인 필요)")
     except (requests.RequestException, ValueError, TypeError) as exc:
         status.append(f"Npay 증권 조회 실패: {type(exc).__name__}")
-    # Avoid multiple redundant requests when a code-filtered result succeeded.
+    # The mobile integration endpoint publishes a short per-stock research
+    # list. It is an independent fallback for unavailable/changed v2 lists.
+    if not all_rows:
+        try:
+            all_rows = get_naver_mobile_reports(str(code))
+            if not all_rows:
+                status.append("Npay 종목요약 리포트 목록도 수신되지 않았습니다.")
+        except requests.HTTPError as exc:
+            http_status = getattr(exc.response, "status_code", None)
+            status.append(f"Npay 종목요약 HTTP {http_status or '오류'}")
+        except (requests.RequestException, ValueError, TypeError) as exc:
+            status.append(f"Npay 종목요약 조회 실패: {type(exc).__name__}")
     if not all_rows:
         for url, params, parser in [
             (HANKYUNG_LEGACY, {"search_type": "1", "search_text": name}, parse_legacy),
