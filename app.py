@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -10,7 +11,7 @@ import streamlit as st
 from data_sources import (SEED, seed_listing, get_listing, get_corp_codes,
                           find_instrument, clean_code, get_prices, get_profile,
                           get_investor_flows, dart_disclosures, dart_financials, get_news,
-                          get_corp_codes_diagnostic, DART_KNOWN_CORP_CODES,
+                          get_corp_codes_diagnostic, diagnose_dart, DART_KNOWN_CORP_CODES,
                           get_kis_access_token, get_kis_quote)
 from scoring import evaluate, explain, pct_change, number
 from report import render_html, snapshot
@@ -31,6 +32,7 @@ html,body,[class*="css"]{font-family:"Pretendard","Noto Sans KR","Malgun Gothic"
 .stTabs [data-baseweb="tab"]{background:#f1f5f9;border-radius:8px;padding:8px 15px}
 .stTabs [aria-selected="true"]{background:#d5eeeb!important;color:#0b6d68!important}
 [data-testid="stMetric"]{background:white;border:1px solid #e3eaf0;border-radius:12px;padding:16px}
+[data-testid="stMetricValue"]{font-size:clamp(1.2rem,1.85vw,1.75rem)!important}
 .tiny{font-size:12px;color:#6b7c91}
 .notes{border-left:4px solid #008b83;background:#f0f8f7;border-radius:7px;padding:13px 17px;line-height:1.7}
 [data-testid="stAlert"]{border-radius:10px}
@@ -135,6 +137,18 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
     st.divider()
+    with st.expander('🔧 DART 연결 진단',expanded=False):
+        st.caption('DART 키는 Secrets에서만 읽으며, 진단 결과에 키 값을 표시하지 않습니다.')
+        st.caption('DART 인증키: ' + ('등록 확인' if api_key else '미등록'))
+        if st.button('DART 연결 진단 실행',key='dart_connection_test',use_container_width=True):
+            with st.spinner('기업개황·재무 API 상태 확인 중...'):
+                st.session_state['dart_connection_diagnostic']=diagnose_dart(api_key)
+        diag=st.session_state.get('dart_connection_diagnostic')
+        if diag:
+            msg=f"{diag.get('상태','확인 불가')}: {diag.get('상세','')}"
+            if diag.get('코드'): msg+=f" (DART 상태코드 {diag['코드']})"
+            if diag.get('상태')=='정상':st.success(msg)
+            else:st.warning(msg)
     st.caption('• OpenDART·KIS 인증정보는 Streamlit Secrets에서 관리합니다.')
     st.caption('• 데이터는 실시간 체결 시세가 아닐 수 있습니다.')
     st.caption('• 투자 권유가 아닌 참고용 리서치 도구입니다.')
@@ -195,7 +209,8 @@ with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False)
         disclosures=cached_disclosures(api_key,corp_code)
     else:
         annual,quarterly,fs_scope,disclosures=pd.DataFrame(),pd.DataFrame(),'',pd.DataFrame()
-    status.update(label='분석 데이터 준비 완료',state='complete',expanded=False)
+    incomplete=bool(prices.empty or (api_key and annual.empty) or flows.empty)
+    status.update(label='데이터 확인 완료 · 일부 항목 미수신' if incomplete else '분석 데이터 준비 완료',state='complete',expanded=False)
 
 scores=evaluate(prices,annual,quarterly,flows,news,profile)
 indicator=scores['indicators']
@@ -205,7 +220,7 @@ change=pct_change(price,prev)
 price_date=indicator.get('asof','확인 불가')
 
 st.subheader(f"{resolved['name']}  ·  {resolved['code']}")
-st.caption(f"{resolved['market']}  |  최종 확인 종가일 {price_date}  |  시세: {price_source or '연동 불가'}  |  분석 실행: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+st.caption(f"{resolved['market']}  |  최종 확인 종가일 {price_date}  |  시세: {price_source or '연동 불가'}  |  분석 실행(KST): {datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M')}")
 
 if kis_snapshot:
     st.success('한국투자증권 KIS REST 시세가 연결되었습니다. 위 시세는 조회 시점 스냅샷이며, 기술적 점수는 별도 일별 종가를 기준으로 합니다.')
@@ -219,17 +234,19 @@ elif not corp_code:
     st.warning('이 종목의 DART 고유번호를 찾지 못해 재무·공시 분석을 보류합니다.' + (f' DART 오류: {dart_error}' if dart_error else ''))
 elif known_dart_fallback:
     st.info('DART 전체 기업 목록 조회가 정상 완료되지 않아, 공식 확인된 삼성전자 DART 고유번호로 재무·공시 조회를 시도합니다.')
+    if st.session_state.get('dart_load_error'):
+        st.caption('DART 기업 목록 상태: '+st.session_state['dart_load_error'])
     if annual.empty and disclosures.empty:
-        st.warning('고유번호를 확인했지만 DART 재무·공시 응답이 없습니다. Secrets의 DART_API_KEY 유효성·접근 권한·호출 제한을 확인하세요.')
+        st.warning('고유번호를 확인했지만 DART 재무·공시 응답이 없습니다. 왼쪽 「DART 연결 진단」을 열어 상세 원인을 확인하세요.')
 if flow_error:st.caption(f'참고: {flow_error}')
 
 m1,m2,m3,m4=st.columns([1.1,1,1,1])
 m1.metric('KIS 조회 현재가' if kis_snapshot else '최근 확인 종가',
           fmt(kis_snapshot.get('price') if kis_snapshot else price,'원',0),
           fmt(kis_snapshot.get('delta') if kis_snapshot else change,'%',2) if (kis_snapshot.get('delta') if kis_snapshot else change) is not None else None)
-m2.metric('종합 점수',fmt(scores['total'],' / 100점',1),help='실제 데이터가 있는 항목의 가중평균. 투자 수익률 예측치가 아닙니다.')
+m2.metric('잠정 점수' if scores['partial'] else '종합 점수',fmt(scores['total'],' / 100점',1),help='실제 데이터가 있는 항목의 가중평균. 투자 수익률 예측치가 아닙니다.')
 m3.metric('평가 데이터 충족률',f"{scores['coverage']}%",help='전체 100점 배점 중 점수를 산출한 항목의 배점 합계입니다.')
-m4.metric('종합 의견',scores['label'])
+m4.metric('종합 의견','데이터 부족 · 판단 보류' if scores['coverage'] < 50 else scores['label'])
 if scores['partial']:
     st.warning(f"산출 가능한 평가영역 배점이 {scores['coverage']}%로 제한됩니다. 종합 점수는 잠정치이며 모든 항목이 있는 종목과 직접 비교하지 마세요.")
 
@@ -403,7 +420,7 @@ with t5:
                 'flows':'KRX(pykrx)' if not flows.empty else '연동 없음',
                 'news':'Google News RSS' if not news.empty else '연동 없음'}
     html=render_html(resolved,scores,final_text,kis_snapshot.get('price',price),
-                     f'KIS 조회 {datetime.now().strftime("%Y-%m-%d %H:%M")} / 일별 종가 {price_date}' if kis_snapshot else price_date,source_map)
+                     f'KIS 조회(KST) {datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")} / 일별 종가 {price_date}' if kis_snapshot else price_date,source_map)
     c1,c2,c3=st.columns(3)
     c1.download_button('📄 인쇄용 HTML 리포트',html,file_name=f'HanaV_Stock_{resolved["code"]}.html',mime='text/html',use_container_width=True)
     c2.download_button('🗂️ 점수 스냅샷 JSON',snapshot(resolved,scores,price_date),file_name=f'HanaV_Snapshot_{resolved["code"]}.json',mime='application/json',use_container_width=True)
