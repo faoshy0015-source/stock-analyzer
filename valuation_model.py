@@ -9,12 +9,15 @@ is called undervalued unless source metrics are actually available.
 from __future__ import annotations
 
 from math import isfinite
+from statistics import median
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
 VALUATION_WEIGHTS = {
     "동종업종 PER 비교": 6,
     "과거 5년 PER·PBR 밴드": 5,
-    "ROE 보정 PBR": 5,
+    "3개년 ROE 지속성": 5,
     "Forward PER 비교": 4,
 }
 
@@ -65,7 +68,71 @@ def _component(name, weight, score=None, evidence="", source="", covered_weight=
     }
 
 
-def evaluate_valuation(profile, context=None):
+def _sustainable_roe(annual):
+    """Score durable ROE from 3 consecutive filed fiscal years, not PER/PBR.
+
+    This evaluates whether earnings on equity persist. It avoids the
+    tautology PBR/ROE = PER by using 3-year ROE stability, not a price ratio.
+    ROE approximates consolidated net income / year-end equity.
+    """
+    if annual is None or annual.empty:
+        return None, "연간 DART 순이익·자본총계 최근 3개년 자료가 필요"
+    if not {"period", "net_income", "equity"} <= set(annual.columns):
+        return None, "연간 DART 순이익·자본총계 최근 3개년 자료가 필요"
+    items = []
+    for _, row in annual.iterrows():
+        year = str(row.get("period") or "")
+        if not (len(year) == 4 and year.isdigit()):
+            continue
+        ni = _signed(row.get("net_income"))
+        eq = pos(row.get("equity"))
+        if ni is None or eq is None:
+            continue
+        roe = ni / eq
+        if not isfinite(roe) or abs(roe) > 3:
+            continue
+        items.append((int(year), roe))
+    by_year = {year: roe for year, roe in items}
+    if not by_year:
+        return None, "유효한 순이익·자본총계가 없습니다."
+    latest=max(by_year)
+    now=datetime.now(ZoneInfo("Asia/Seoul")).year
+    if latest > now-1 or latest < now-2:
+        return None, "최근 확정 연간보고서가 충분하지 않습니다."
+    selected_years=[latest-2, latest-1, latest]
+    if any(year not in by_year for year in selected_years):
+        return None, "최근 3개년 연속 순이익·자본총계가 필요합니다."
+    three=[by_year[y] for y in selected_years]
+    med=float(median(three))
+    positive_years=sum(r > 0 for r in three)
+    spread=max(three)-min(three)
+    profitability=max(0.0,min(100.0,(med+0.05)*100/0.25))
+    continuity=positive_years/3*100
+    stability=max(0.0,min(100.0,100-(spread/0.25)*100))
+    score=0.65*profitability+0.20*continuity+0.15*stability
+    if positive_years==0:
+        score=0
+    elif positive_years==1:
+        score=min(score,35)
+    elif positive_years==2:
+        score=min(score,70)
+    return round(score,1), (
+        f"{selected_years[0]}~{latest}년 연간 간이 ROE "
+        f"{'/'.join(f'{r*100:+.1f}%' for r in three)} · "
+        f"중앙값 {med*100:.1f}% · 흑자 {positive_years}/3년 · "
+        "평가에 PER의 역산식(PBR/ROE)을 중복 사용하지 않음"
+    )
+
+
+def _signed(value):
+    try:
+        result=float(value)
+        return result if isfinite(result) else None
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def evaluate_valuation(profile, context=None, annual=None):
     """Return weight-aware valuation subscore ready for scoring.evaluate()."""
     profile = profile or {}
     context = context or {}
@@ -105,22 +172,14 @@ def evaluate_valuation(profile, context=None):
     result.append(_component("과거 5년 PER·PBR 밴드",5,hist_score,
                              history_desc,"KRX/pykrx 과거 월말 PER·PBR",covered))
 
-    # 3. PBR relative to same industry peer ROE: EPS/BPS is used consistently
-    # across ticker and sector. Correlated with PER: note to user.
-    target_pbr = pos(context.get("krx_pbr"))
-    target_roe = pos(context.get("krx_roe_proxy"))
-    median_price_to_roe = pos(context.get("peer_median_pbr_roe"))
-    roe_count=int(context.get("peer_pbr_roe_count") or 0)
-    if target_pbr and target_roe and median_price_to_roe and roe_count>=5:
-        pbr_to_roe=target_pbr/target_roe
-        score=ratio_score(pbr_to_roe,median_price_to_roe)
-        detail=(f"{sector} PBR/ROE 중앙값 {median_price_to_roe:.2f}, "
-                f"대상 {pbr_to_roe:.2f}, ROE(EPS/BPS) {target_roe*100:.1f}%, 비교종목 {roe_count}개")
-    else:
-        score=None
-        detail="같은 업종의 EPS/BPS·PBR 유효 기업 5개 이상이 필요"
-    result.append(_component("ROE 보정 PBR",5,score,detail,
-                             "KRX/pykrx EPS·BPS·PBR (간이 ROE)"))
+    # 3. Multi-year ROE persistence avoids tautological PBR/ROE = PER.
+    # Current PBR is shown for context, but is not double-counted here.
+    score, detail = _sustainable_roe(annual)
+    pbr = pos(context.get("krx_pbr"))
+    if pbr is not None:
+        detail += f" · 현재 KRX PBR {pbr:.2f}배는 가격 참고자료(점수 중복 제외)"
+    result.append(_component("3개년 ROE 지속성",5,score,detail,
+                             "OpenDART 확정 연간 순이익·기말 자본 3개년"))
 
     # 4. Forward PER: do not compare an unaudited forecast with a broad
     # industry trailing multiple. No peer consensus -> no 4-point credit.
@@ -143,6 +202,6 @@ def evaluate_valuation(profile, context=None):
         "weight":20, "covered_weight":round(used,2), "earned":round(earned,2),
         "score":round(100*earned/used,1) if used else None,
         "components":result,
-        "confidence": "낮음 · 업종 PER·PBR 관련 지표 간 상관성 주의",
-        "note":"비교기업은 KRX의 넓은 업종분류이며 수익성·회계기간이 완벽히 일치하지 않을 수 있습니다."
+        "confidence": "보통 · 업종·과거비교는 원천 지표와 회계기간 확인 필요",
+        "note":"KRX 업종은 넓은 분류입니다. ROE 지속성 5점은 다년 수익의 안정성을 별도로 평가해 PBR/ROE를 다시 PER로 중복 채점하지 않습니다."
     }
