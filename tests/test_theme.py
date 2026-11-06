@@ -37,5 +37,5 @@ def test_exported_html_matches_light_warm_theme_and_author():
     assert "CREATED BY K.H.AHN" in report
     assert "HanaV" not in report and "HANAV" not in report
     assert "background:#fffaf3" in report
-    assert "border-left:4px solid #e87d31" in report
-    assert "<title>테스트 | Stock Analyzer</title>" in report
+    assert "border-left:4px solid var(--orange)" in report
+    assert "<title>테스트 | Stock Analyzer 리서치 제안서</title>" in report
