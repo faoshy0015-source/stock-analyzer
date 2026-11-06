@@ -48,9 +48,30 @@ def render_html(instrument, result, narrative, price, stamp, sources, target_sum
             '제공처 표본 수·집계기간은 확인되지 않았습니다.</p>'
         )
     return f'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>{safe(instrument['name'])} | HanaV Stock Analyzer</title>
-    <style>body{{font-family:"Malgun Gothic",Arial,sans-serif;color:#15233b;margin:0;background:#f3f6fa}}main{{max-width:900px;margin:30px auto;background:#fff;padding:36px;box-shadow:0 8px 30px #dde3eb}}h1{{margin:0;color:#0b2442}}.sub{{color:#537189;font-size:12px}}.big{{font-size:37px;color:#078a82;font-weight:bold}}.row{{display:flex;gap:24px;flex-wrap:wrap;border-top:1px solid #eee;padding-top:20px}}.card{{flex:1;min-width:170px}}table{{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}}th{{text-align:left;background:#eef4f7}}th,td{{padding:11px;border-bottom:1px solid #e5e9ee;vertical-align:top}}h2{{margin-top:30px;font-size:18px}}.alert{{background:#f0f7f6;padding:18px;line-height:1.75;border-left:3px solid #078a82}}footer{{margin-top:25px;padding-top:15px;color:#667887;font-size:11px;border-top:1px solid #ddd;line-height:1.6}}@media print{{body{{background:white}}main{{margin:0;box-shadow:none;padding:5mm}}}} </style></head>
-    <body><main><div class="sub">HANAV INVESTMENT INTELLIGENCE · 자동생성 정량 리포트</div>
+    <title>{safe(instrument['name'])} | Stock Analyzer</title>
+    <style>
+    body{{font-family:"Malgun Gothic",Arial,sans-serif;color:#30463d;margin:0;background:#fffaf3}}
+    main{{max-width:900px;margin:30px auto;background:#fffefa;padding:36px;
+      border:1px solid #efdfcc;border-radius:16px;box-shadow:0 8px 32px rgba(117,86,49,.08)}}
+    h1{{margin:6px 0 12px;color:#2d5a49}}
+    .sub{{color:#687b69;font-size:12px;line-height:1.6}}
+    .big{{font-size:34px;color:#c87632;font-weight:bold;letter-spacing:-.4px}}
+    .row{{display:flex;gap:18px;flex-wrap:wrap;padding-top:20px;margin-top:16px;
+      border-top:1px solid #efdfcc}}
+    .card{{flex:1;min-width:170px;padding:14px;background:#fff8ed;border:1px solid #f0e0ca;
+      border-radius:11px}}
+    table{{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}}
+    th{{text-align:left;background:#fff0db;color:#355a4b}}
+    th,td{{padding:11px;border-bottom:1px solid #eadfcf;vertical-align:top}}
+    h2{{margin-top:30px;font-size:18px;color:#315a4b;border-left:4px solid #e87d31;padding-left:11px}}
+    .alert{{background:#fff3e2;padding:18px;line-height:1.75;border-left:4px solid #e87d31;
+      color:#395347;border-radius:8px}}
+    footer{{margin-top:25px;padding-top:15px;color:#6b7b6f;font-size:11px;
+      border-top:1px solid #e8dac7;line-height:1.65}}
+    @media print{{body{{background:#fff}}main{{margin:0;box-shadow:none;border:none;padding:5mm}}
+      .card{{break-inside:avoid}}}}
+    </style></head>
+    <body><main><div class="sub">STOCK ANALYZER · CREATED BY K.H.AHN · 자동생성 정량 리포트</div>
     <h1>{safe(instrument['name'])} <span class="sub">{safe(instrument['code'])}</span></h1>
     <div class="sub">기준 시점: {safe(stamp)} | 시세 제공처: {safe(sources.get('price','확인 불가'))}</div>
     <div class="row"><div class="card"><div class="sub">조회 가격</div><div class="big">{fmt(price,'원',0)}</div></div>
