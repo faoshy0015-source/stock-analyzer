@@ -24,9 +24,14 @@ class FakeStreamlit:
         self.form_rendered=False
         self.stopped=False
         self.reran=False
+        self.markup=[]
 
     def title(self,*args,**kwargs):pass
     def caption(self,*args,**kwargs):pass
+    def markdown(self, content, **kwargs):
+        self.markup.append(str(content))
+    def columns(self, *args, **kwargs):
+        return [nullcontext(), nullcontext(), nullcontext()]
     def error(self,message):self.errors.append(message)
     def form(self,*args,**kwargs):
         self.form_rendered=True
@@ -96,3 +101,22 @@ def test_credentials_are_not_trimmed_or_logged_on_verification():
     assert not verify_password("abc ","abc")
     assert not verify_password("abc","")
     assert not verify_password(None,"abc")
+
+
+def test_login_ui_is_centered_and_green_but_password_stays_server_side():
+    st=FakeStreamlit({"APP_PASSWORD":"do-not-leak"})
+    with pytest.raises(Stopped):
+        require_login(st)
+    page="\n".join(st.markup)
+    assert "hanav-auth-hero" in page
+    assert "linear-gradient(122deg, #07483f" in page
+    assert 'data-testid="stForm"' in page
+    assert "Stock Analyzer" in page
+    assert "do-not-leak" not in page
+    assert st.form_rendered
+
+
+def test_signed_in_session_does_not_emit_login_only_css():
+    st=FakeStreamlit({"APP_PASSWORD":"secret"},authed=True)
+    require_login(st)
+    assert st.markup==[]
