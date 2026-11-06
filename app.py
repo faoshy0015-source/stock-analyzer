@@ -13,7 +13,7 @@ from data_sources import (SEED, seed_listing, get_listing, get_corp_codes,
                           get_investor_flows, dart_disclosures, dart_financials, dart_full_fy_metrics, get_news,
                           get_corp_codes_diagnostic, diagnose_dart, DART_KNOWN_CORP_CODES,
                           get_kis_access_token, get_kis_quote)
-from scoring import evaluate, explain, pct_change, number
+from scoring import evaluate, explain, diagnostic_summary, pct_change, number
 from report import render_html, snapshot
 from valuation_sources import krx_company_marketcap, fill_valuation, positive
 from valuation_context import fetch_valuation_context
@@ -288,6 +288,8 @@ if scores['partial']:
 
 st.markdown('### 종합 분석')
 st.info(explain(scores))
+st.markdown('**실적·가치·수급·재무·추세 요약**')
+st.caption(diagnostic_summary(scores))
 
 score_df=pd.DataFrame(scores['rows'])
 left,right=st.columns([1.15,1])
@@ -296,12 +298,16 @@ with left:
     for row in scores['rows']:
         chart.add_trace(go.Bar(x=[row['score'] if row['score'] is not None else 0],y=[row['category']],
                                name=row['category'],orientation='h',marker_color='#008b83' if row['score'] is not None else '#dde4ec',
-                               text=(f"{row['score']:.1f}" if row['score'] is not None else '미산출'),textposition='inside',
+                               text=(f"{row['score']:.1f}*" if row['score'] is not None
+                                     and row.get('covered_weight',0)<row['weight']
+                                     else f"{row['score']:.1f}" if row['score'] is not None
+                                     else '미산출'),textposition='inside',
                                showlegend=False,hovertemplate='%{y}: %{text}<extra></extra>'))
     chart.update_layout(height=330,template='plotly_white',margin=dict(l=0,r=0,t=15,b=15),
                         xaxis=dict(range=[0,100],title='각 영역 점수 (0~100)'),
                         yaxis=dict(autorange='reversed'))
     st.plotly_chart(chart,use_container_width=True)
+    st.caption('*표시는 일부 세부 배점만 검증한 잠정 점수입니다. 오른쪽의 실제 반영 배점을 함께 확인하세요.')
 with right:
     st.markdown('**항목별 배점과 근거**')
     st.dataframe(pd.DataFrame([{'영역':r['category'],'배점':r['weight'],
@@ -309,7 +315,7 @@ with right:
         '평가':f"{r['score']:.1f}" if r['score'] is not None else '미산출',
         '신뢰도':r['confidence']} for r in scores['rows']]),hide_index=True,use_container_width=True)
     with st.expander('점수 계산 원칙 · 산출 근거',expanded=True):
-        st.write('점수는 규칙 기반 계산이며 OpenAI 모델이 산출하지 않습니다. 결측 영역은 0점으로 간주하지 않고 남은 영역의 배점을 재정규화합니다.')
+        st.write('점수는 규칙 기반 계산이며 OpenAI 모델이 산출하지 않습니다. 결측 영역·세부 배점은 0점으로 간주하지 않고 실제 검증된 배점으로 재정규화합니다.')
         for r in scores['rows']:
             st.markdown(f"**{r['category']} · {fmt(r['score'],'점')} / 반영 {r.get('covered_weight',0):g}점 · 전체 배점 {r['weight']}점**")
             for note in r['notes'][:5]:st.caption('• '+note)
@@ -397,6 +403,28 @@ with t2:
                 else:st.caption('기준 연간 영업이익이 0 이하이므로 단순 성장률 외삽을 제공하지 않습니다.')
     if not quarterly.empty:
         st.caption('분기 실적은 DART 당기 3개월 금액 사용. 4분기는 사업보고서 연간 금액에서 3분기 누적을 차감해 복원할 수 있는 경우만 표시합니다.')
+    st.subheader('재무건전성 검증 항목 (총 20점)')
+    financial_row=next(r for r in scores['rows'] if r['category']=='재무건전성')
+    financial_parts=financial_row.get('components',[])
+    if financial_parts:
+        st.dataframe(pd.DataFrame([{
+            '평가 항목':x['name'], '배점':x['weight'],
+            '검증 배점':x['covered_weight'],
+            '획득 점수':f"{x['earned']:.2f}" if x['earned'] is not None else '미산출',
+            '결과':x['status'],
+        } for x in financial_parts]),hide_index=True,use_container_width=True)
+        st.caption(f"실제 검증 {financial_row.get('covered_weight',0):g}/20점 배점 · "
+                   "영업현금흐름·이자보상·유동비율을 확인할 수 없으면 20점 전체를 채운 것으로 보지 않습니다.")
+        with st.expander('재무 항목 산식·데이터 출처'):
+            for x in financial_parts:
+                st.markdown(f"**{x['name']} · {x['status']} ({x['covered_weight']}/{x['weight']}점)**")
+                st.caption(x['evidence'])
+                st.caption('출처: '+x['source'])
+            if profile.get('__financial_context'):
+                c=profile['__financial_context']
+                st.caption(f"DART 상세 재무자료: {c.get('year','')}년 "
+                           f"{'연결' if c.get('fs_scope')=='CFS' else '별도'}")
+        st.caption('금융업(은행·증권·보험 등)은 제조업용 건전성 기준을 적용하지 않으며 전용 평가가 마련될 때까지 보류합니다.')
 
 with t3:
     vc1,vc2=st.columns(2)
@@ -462,9 +490,9 @@ with t3:
                               yaxis_title='PER·PBR (배, 서로 다른 척도)')
             st.plotly_chart(fig,use_container_width=True)
             st.caption('박스그래프는 과거 값의 분포입니다. PER과 PBR의 배수 크기는 직접 비교하지 마세요.')
-        st.caption('평가기준: 업종 PER 비교 6점 + 과거 밴드 5점 + ROE 보정 PBR 5점 + '
-                   '동기준 Forward PER 4점. KRX 업종은 넓은 업종분류이며 PER과 ROE/PBR은 '
-                   '수학적으로 연관되어 중복 정보가 포함될 수 있습니다. '
+        st.caption('평가기준: 업종 PER 비교 6점 + 과거 밴드 5점 + 최근 3개년 ROE 지속성 5점 + '
+                   '동기준 Forward PER 4점. ROE 5점은 PER과 동치인 PBR/ROE 역산을 제거하고 '
+                   '장기 수익의 안정성을 측정합니다. '
                    '전망 컨센서스 제공처가 없으면 Forward PER 4점은 평가에서 제외됩니다.')
     with vc2:
         st.subheader('외국인·기관 순매수')
