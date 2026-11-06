@@ -21,6 +21,7 @@ from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH
 from flow_model import fetch_krx_turnover_context
 from consensus_targets import summarize_targets, naver_published_consensus
 from access_gate import require_login
+from score_table import render_score_table
 
 st.set_page_config(page_title='Stock Analyzer · K.H.AHN', page_icon='📊', layout='wide',
                    initial_sidebar_state='expanded')
@@ -122,6 +123,25 @@ input:focus-visible,button:focus-visible{
   border-radius:8px;padding:14px 18px;line-height:1.75;color:#405347;
 }
 [data-testid="stAlert"]{border-radius:11px}
+/* Fit the entire evidence table into its column without cutting off trust text. */
+.score-table-wrap{width:100%;margin-top:8px;border:1px solid #e9dccb;
+  border-radius:10px;overflow:hidden;background:#fffefa}
+.score-compact-table{width:100%;table-layout:fixed;border-collapse:collapse;
+  font-size:12px;line-height:1.5;color:#354e41}
+.score-compact-table th,.score-compact-table td{
+  padding:9px 5px;border-bottom:1px solid #f0e6da;
+  overflow-wrap:anywhere;word-break:keep-all;vertical-align:middle;
+  white-space:normal;text-align:left;
+}
+.score-compact-table thead th{background:#fff1df;color:#76532f;font-weight:740}
+.score-compact-table tbody th{font-weight:650;color:#315a49}
+.score-compact-table tbody tr:last-child>*{border-bottom:0}
+.score-compact-table td.score-number{text-align:center;font-variant-numeric:tabular-nums;
+  white-space:nowrap;padding-left:2px;padding-right:2px}
+.score-compact-table td.score-full{color:#157d68;font-weight:700}
+.score-compact-table td.score-partial{color:#ad6429;font-weight:700}
+.score-compact-table td.score-missing{color:#8c8c84}
+.score-compact-table td.score-trust{color:#5e7061;font-size:11px}
 h2,h3{color:#345348}
 @media(max-width:760px){
   .brand{padding:18px 20px}
@@ -424,7 +444,7 @@ st.markdown('**실적·가치·수급·재무·추세 요약**')
 st.caption(diagnostic_summary(scores))
 
 score_df=pd.DataFrame(scores['rows'])
-left,right=st.columns([1.15,1])
+left,right=st.columns([1,1.28],gap='medium')
 with left:
     chart=go.Figure()
     for row in scores['rows']:
@@ -442,12 +462,9 @@ with left:
     st.caption('청록색은 해당 영역 전체 배점 평가, 황금색(*)은 일부 배점만 평가, 회색은 미산출을 의미합니다. 재무건전성 100.0*도 미확인된 위험이 없다는 뜻은 아닙니다.')
 with right:
     st.markdown('**항목별 배점과 근거**')
-    st.dataframe(pd.DataFrame([{'영역':r['category'],'배점':r['weight'],
-        '실제 반영 배점':r.get('covered_weight',0),
-        '확인 지표 평가':(f"{r['score']:.1f} (부분)" if r.get('covered_weight',0)<r['weight']
-                      else f"{r['score']:.1f}") if r['score'] is not None else '미산출',
-        '신뢰도':r['confidence']} for r in scores['rows']]),hide_index=True,use_container_width=True)
-    with st.expander('점수 계산 원칙 · 산출 근거',expanded=True):
+    st.markdown(render_score_table(scores['rows']),unsafe_allow_html=True)
+    st.caption('배점=전체 비중 · 반영=실제 검증한 배점 · 점수(*)=부분 평가')
+    with st.expander('점수 계산 원칙 · 산출 근거',expanded=False):
         st.write('점수는 별도 API 비용 없는 규칙 기반 계산입니다. 누락 배점은 0점 또는 중립으로 채우지 않고, 검증된 배점만 재정규화합니다.')
         for r in scores['rows']:
             st.markdown(f"**{r['category']} · {fmt(r['score'],'점')} / 반영 {r.get('covered_weight',0):g}점 · 전체 배점 {r['weight']}점**")
