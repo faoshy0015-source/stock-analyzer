@@ -9,6 +9,17 @@ from valuation_model import evaluate_valuation, percentile_score, ratio_score, V
 from valuation_context import _history_monthly, _sector_peers
 
 
+def _annual():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    y=datetime.now(ZoneInfo("Asia/Seoul")).year-1
+    return pd.DataFrame([
+        {"period":str(y-2),"net_income":12,"equity":100},
+        {"period":str(y-1),"net_income":16,"equity":120},
+        {"period":str(y),"net_income":20,"equity":140},
+    ])
+
+
 def _context():
     return {
         "date":"2026-11-05", "sector_name":"전기전자",
@@ -27,7 +38,7 @@ def test_weights_and_full_20_points_coverage():
     assert list(VALUATION_WEIGHTS.values()) == [6,5,5,4]
     assert sum(VALUATION_WEIGHTS.values()) == 20
     assert sum(WEIGHTS.values()) == 100
-    r=evaluate_valuation({"forwardPE":11},_context())
+    r=evaluate_valuation({"forwardPE":11},_context(),_annual())
     assert len(r["components"]) == 4
     assert r["covered_weight"]==20
     assert r["score"] is not None
@@ -36,7 +47,7 @@ def test_weights_and_full_20_points_coverage():
 
 
 def test_missing_consensus_is_not_made_up():
-    r=evaluate_valuation({},_context())
+    r=evaluate_valuation({},_context(),_annual())
     assert r["covered_weight"]==16
     assert r["components"][-1]["score"] is None
     assert r["components"][-1]["status"]=="미산출"
@@ -90,7 +101,9 @@ def test_roe_removed_from_financial_health_scoring():
     score=evaluate(pd.DataFrame(),annual,pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),{})
     fin=next(x for x in score["rows"] if x["category"]=="재무건전성")
     assert not any("간이 ROE " in n for n in fin["notes"])
-    assert any("중복 채점하지" in n for n in fin["notes"])
+    assert fin["weight"] == 20
+    assert fin["covered_weight"] == 5
+    assert any(x["name"] == "부채비율" for x in fin["components"])
 
 
 def test_history_filters_invalid_zero_and_needs_24_observations():
@@ -118,3 +131,23 @@ def test_sector_comparables_require_five_peers():
     assert c["peer_median_per"]==14
     assert c["peer_pbr_roe_count"]==5
     assert not _sector_peers(data,sectors,"999999")
+
+
+def test_three_year_roe_is_distinct_from_per_inverse():
+    frame=_annual()
+    c=_context()
+    v1=evaluate_valuation({},c,frame)
+    assert v1["components"][2]["name"] == "3개년 ROE 지속성"
+    assert v1["components"][2]["covered_weight"] == 5
+    # Current PER/PBR changes must not alter the 3y ROE stability score.
+    c["krx_per"]=120
+    c["krx_pbr"]=10
+    v2=evaluate_valuation({},c,frame)
+    assert v2["components"][2]["score"] == v1["components"][2]["score"]
+
+
+def test_three_year_roe_missing_year_does_not_fill_five_points():
+    frame=_annual().iloc[[0,2]].copy()
+    r=evaluate_valuation({},_context(),frame)
+    assert r["components"][2]["covered_weight"] == 0
+    assert r["components"][2]["score"] is None
