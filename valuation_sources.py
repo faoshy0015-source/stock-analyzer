@@ -140,7 +140,10 @@ def fill_valuation(profile, krx_snapshot, annual, kis_snapshot=None):
     never mistake the proxy for an official forward/TTM PER/PBR.
     """
     result = dict(profile or {})
-    result.setdefault("__valuation_source", "Yahoo Finance")
+    if positive(result.get("trailingPE")) or positive(result.get("priceToBook")):
+        result.setdefault("__valuation_source", "Yahoo Finance")
+    else:
+        result.setdefault("__valuation_source", "미확인")
     kis_snapshot = kis_snapshot or {}
     # Broker source, if available, is more direct than a reconstructed ratio.
     for target, field in [("trailingPE", "per"), ("priceToBook", "pbr")]:
@@ -190,8 +193,10 @@ def fill_valuation(profile, krx_snapshot, annual, kis_snapshot=None):
                 "지배주주 귀속분·최근 4분기 순이익·자기주식·주식종류를 "
                 "엄밀히 조정한 공식 PER/PBR과 다를 수 있습니다."
             )
+            existing_source=result.get("__valuation_source","미확인")
             result["__valuation_source"] = (
-                result["__valuation_source"] + " + KRX·DART 간이 계산"
+                "KRX·DART 간이 계산" if existing_source == "미확인"
+                else existing_source + " + KRX·DART 간이 계산"
             )
     if marketcap and (result.get("__valuation_approx") or not positive(result.get("marketCap"))):
         result["marketCap"] = marketcap
