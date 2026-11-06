@@ -23,7 +23,7 @@ Python 3.11/3.12 권장. 브라우저에서 보통 `http://localhost:8501`로 �
 
 1. 프로젝트 폴더 내용(`app.py`, `data_sources.py`, `scoring.py`, `report.py`, `requirements.txt`, `.streamlit/config.toml` 등)을 **본인 GitHub 저장소** 루트에 업로드합니다. 기존 앱 저장소와 혼동하지 않도록 별도 저장소를 권장합니다.
 2. [share.streamlit.io](https://share.streamlit.io/)에서 **Create app** → GitHub 저장소 선택 → Main file: `app.py` → Deploy.
-3. Streamlit Cloud **App settings > Secrets**에 필요 시 다음을 등록합니다. 일반 사용자에게 API 키를 요청하는 것보다 운영자가 Secrets에 넣는 편이 안전합니다.
+3. Streamlit Cloud **App settings > Secrets**에 필요한 인증정보를 등록합니다. OpenDART와 KIS 인증키는 화면에 입력하지 않으며 서버 측 Secrets에서만 읽습니다.
 
 ```toml
 DART_API_KEY = "본인_OpenDART_인증키"
@@ -32,13 +32,13 @@ KIS_APP_KEY = ""
 KIS_APP_SECRET = ""
 ```
 
-해당 정보는 **서버 측에서 사용**됩니다. `secrets.toml` 원본은 GitHub에 절대 올리지 마세요. OpenAI 키는 입력했더라도 **AI 버튼을 누르지 않으면** 호출되지 않습니다. AI 버튼 호출에는 별도 OpenAI API 요금이 발생할 수 있으며 ChatGPT 구독과 별개입니다.
+DART·KIS 인증정보는 **서버 측에서만 사용**됩니다. KRX 조회는 현재 별도 KRX 키 없이 `pykrx`를 활용하며, Supabase는 이 버전에 연동되지 않았습니다. `secrets.toml` 원본은 GitHub에 절대 올리지 마세요. OpenAI 키는 입력했더라도 **AI 버튼을 누르지 않으면** 호출되지 않습니다. AI 버튼 호출에는 별도 OpenAI API 요금이 발생할 수 있으며 ChatGPT 구독과 별개입니다.
 
 ## 처음 사용하는 순서
 
 1. 기본 `005930` 삼성전자를 열어 봅니다. 종목코드 `000660` (SK하이닉스), `035420`(NAVER) 등도 지원합니다.
 2. 6자리 코드로는 모든 종목을 직접 조회할 수 있습니다(데이터 제공처가 해당 종목을 제공해야 합니다). **종목명 검색 범위**를 넓히려면 사이드바에서 `KRX 전체 종목 목록 불러오기` 또는 DART 키 설정 후 `DART 상장사 목록 불러오기`를 누르세요.
-3. OpenDART 키 없이도 **주가/차트/기술분석/뉴스** 등 공개 접근 가능한 데이터부터 표시합니다. 재무/공시를 사용하려면 [OpenDART 개발자](https://opendart.fss.or.kr/)에서 무료 인증키 발급 후 사이드바에 입력하거나 Secrets에 설정하세요.
+3. OpenDART 키 없이도 **주가/차트/기술분석/뉴스** 등 공개 접근 가능한 데이터부터 표시합니다. 재무/공시를 사용하려면 [OpenDART 개발자](https://opendart.fss.or.kr/)에서 발급한 인증키를 Streamlit Secrets의 `DART_API_KEY`에 설정하세요. DART·KIS 키 입력창은 화면에 표시되지 않습니다.
 4. KIS App Key/Secret이 있다면 **KIS REST 조회 시점 현재가**를 추가로 표시할 수 있습니다. 실시간 WebSocket 스트리밍은 포함하지 않습니다. 실전투자용 키의 접근 권한 및 데이터 재배포 가능 여부는 별도로 확인하세요.
 5. 재무 항목과 성장률은 DART 확정 실적 기준이며, **영업이익 시나리오**는 사용자가 가정한 성장률 민감도일 뿐 컨센서스가 아닙니다.
 6. `리포트·기록` 탭에서 **인쇄용 HTML**, 평가표 CSV, 점수 스냅샷 JSON을 다운로드할 수 있습니다. HTML을 브라우저에서 열고 인쇄 → PDF 저장이 가능합니다. 이전 JSON을 업로드해 점수 변화도 비교할 수 있습니다.
