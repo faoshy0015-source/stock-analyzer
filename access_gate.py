@@ -207,9 +207,9 @@ def require_login(st):
     with center:
         st.markdown(
             """
-            <section class="hanav-auth-hero" aria-label="HanaV Stock Analyzer">
-              <div class="hanav-auth-eyebrow">HANAV INVESTMENT INTELLIGENCE · SECURE ACCESS</div>
-              <div class="hanav-auth-logo">H</div>
+            <section class="hanav-auth-hero" aria-label="Stock Analyzer login">
+              <div class="hanav-auth-eyebrow">STOCK ANALYZER · SECURE ACCESS</div>
+              <div class="hanav-auth-logo">SA</div>
               <h1 class="hanav-auth-title">Stock Analyzer</h1>
               <p class="hanav-auth-subtitle">
                 기업의 가치를 더 입체적으로 읽다.<br>
@@ -241,7 +241,7 @@ def require_login(st):
             submitted = st.form_submit_button("안전하게 로그인", use_container_width=True)
 
         st.markdown(
-            '<div class="hanav-auth-footer">HANAV · PRIVATE RESEARCH WORKSPACE</div>',
+            '<div class="hanav-auth-footer">CREATED BY K.H.AHN</div>',
             unsafe_allow_html=True,
         )
 
