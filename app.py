@@ -18,6 +18,8 @@ from report import render_html, snapshot
 from valuation_sources import krx_company_marketcap, fill_valuation, positive
 from valuation_context import fetch_valuation_context
 from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH, NAVER_ITEM_RESEARCH
+from flow_model import fetch_krx_turnover_context
+from consensus_targets import summarize_targets, naver_published_consensus
 
 st.set_page_config(page_title='HanaV Stock Analyzer', page_icon='📊', layout='wide',
                    initial_sidebar_state='expanded')
@@ -73,6 +75,9 @@ def cached_valuation_context(code,market):return fetch_valuation_context(code,ma
 @st.cache_data(ttl=3600,show_spinner=False)
 def cached_flow(code):return get_investor_flows(code)
 
+@st.cache_data(ttl=3600,show_spinner=False)
+def cached_turnover(code):return fetch_krx_turnover_context(code)
+
 @st.cache_data(ttl=10800,show_spinner=False)
 def cached_fin(key,corp):return dart_financials(key,corp)
 
@@ -87,6 +92,9 @@ def cached_disclosures(key,corp):return dart_disclosures(key,corp)
 
 @st.cache_data(ttl=3600,show_spinner=False)
 def cached_analyst_reports(code,name):return get_analyst_reports(code,name,limit=18)
+
+@st.cache_data(ttl=3600,show_spinner=False)
+def cached_published_consensus(code):return naver_published_consensus(code)
 
 
 def fmt(v, unit='', decimal=1):
@@ -205,6 +213,8 @@ with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False)
         kis_snapshot=cached_kis_quote(resolved['code'],kis_key,kis_secret,token) if token else {}
     st.write('외국인·기관 수급 / 뉴스 로드')
     flows,flow_error=cached_flow(resolved['code'])
+    daily_turnover,turnover_error=cached_turnover(resolved['code']) if not flows.empty else (pd.DataFrame(),"")
+    profile['__daily_turnover']=daily_turnover
     news=cached_news(resolved['name'])
     if api_key and corp_code:
         st.write('OpenDART 공시·재무제표 로드')
@@ -259,6 +269,7 @@ elif known_dart_fallback:
     if annual.empty and disclosures.empty:
         st.warning('고유번호를 확인했지만 DART 재무·공시 응답이 없습니다. 왼쪽 「DART 연결 진단」을 열어 상세 원인을 확인하세요.')
 if flow_error:st.caption(f'참고: {flow_error}')
+if turnover_error:st.caption(f'참고: {turnover_error}')
 
 m1,m2,m3,m4=st.columns([1.1,1,1,1])
 m1.metric('KIS 조회 현재가' if kis_snapshot else '최근 확인 종가',
