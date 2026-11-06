@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 import pandas as pd
+from valuation_model import evaluate_valuation
 
 WEIGHTS = {'실적·성장성':25,'밸류에이션':20,'수급':15,'재무건전성':20,'주가 추세':10,'뉴스 모멘텀':10}
 GOOD_WORDS = ('수주','흑자전환','증익','상향','성장','신제품','수출 증가','계약 체결','자사주 소각','신고가','실적 개선','증설')
@@ -72,6 +73,7 @@ def get_indicators(prices):
 
 def score_record(label,points,parts,comments,confidence='보통'):
     return {'category':label,'weight':WEIGHTS[label],
+            'covered_weight':WEIGHTS[label] if parts else 0,
             'score':round(sum(s*w for s,w in parts)/sum(w for _,w in parts),1) if parts else None,
             'notes':comments,'confidence':confidence if parts else '미산출', 'tests':len(parts)}
 
@@ -95,24 +97,24 @@ def evaluate(prices, annual, quarterly, flow, news, profile):
         # QoQ is not YoY; avoid equating seasonal changes with growth.
         notes.append(f'최근 분기 영업이익 {qop/1e8:,.0f}억원 (직전 분기 {qopprev/1e8:,.0f}억원)')
     results.append(score_record('실적·성장성',0,tests,notes))
-    # VALUATION: standalone thresholds are crude, never assert sector-relative ranking
-    tests=[];notes=[]
-    per=number(profile.get('trailingPE'))
-    pbr=number(profile.get('priceToBook'))
-    roe=number(profile.get('returnOnEquity'))
-    if per is not None and per>0:
-        tests.append((interp(per,40,7),1));notes.append(f'PER {per:.1f}배 (단순 절대수준, 업종 보정 전)')
-    if pbr is not None and pbr>0:
-        tests.append((interp(pbr,5,0.7),1));notes.append(f'PBR {pbr:.2f}배 (자산 효율성 함께 확인 필요)')
-    if pbr and roe is not None and pbr>0 and roe>0:
-        earnings_yield=roe/pbr*100 # fractional roe / pbr -> percentage approximation
-        tests.append((interp(earnings_yield,2,15),1));notes.append(f'ROE/PBR 참고 지표 {earnings_yield:.1f}% (자기자본 효율 보정)')
+    # VALUATION: four weighted dimensions, each scored only with real data.
+    valuation=evaluate_valuation(profile,profile.get('__valuation_context') or {})
+    val_notes=[valuation['note']]
+    for part in valuation['components']:
+        val_notes.append(f"{part['name']}: {part['status']} "
+                         f"({part['covered_weight']:g}/{part['weight']}점) · {part['evidence']}")
     if profile.get('__valuation_approx'):
-        notes.append('주의: '+str(profile.get('__valuation_approx_note') or '연간 실적·시가총액을 이용한 간이 추정입니다.'))
-    confidence = ('낮음 · KRX·DART 간이 추정 · 업종 비교 미반영'
-                  if profile.get('__valuation_approx')
-                  else '낮음 · 업종 비교 미반영')
-    results.append(score_record('밸류에이션',0,tests,notes,confidence))
+        val_notes.append('참고용 간이 PER/PBR: '+
+                         str(profile.get('__valuation_approx_note') or '공식 PER/PBR 아님'))
+    results.append({
+        'category':'밸류에이션','weight':WEIGHTS['밸류에이션'],
+        'covered_weight':valuation['covered_weight'],
+        'score':valuation['score'],'notes':val_notes,
+        'confidence':valuation['confidence'] if valuation['score'] is not None else '미산출',
+        'tests':sum(1 for x in valuation['components'] if x['covered_weight']>0),
+        'components':valuation['components'],
+        'available_points':valuation['earned']
+    })
     # FLOW
     tests=[];notes=[]
     if flow is not None and len(flow)>=5 and all(k in flow for k in ('외국인','기관')):
@@ -142,12 +144,12 @@ def evaluate(prices, annual, quarterly, flow, news, profile):
         if not is_financial:
             tests.append((interp(equity_ratio,15,70),1))
         notes.append(f'자기자본비율 {equity_ratio:.1f}%')
-    if op is not None and op>0 and eq is not None and eq>0:
-        # ROE is ideally net income/equity; use NI if available
-        net,_=last_pair(annual,'net_income')
-        if net is not None:
-            simple_roe=net/eq*100
-            tests.append((interp(simple_roe,-5,20),1));notes.append(f'기말 자본 기준 간이 ROE {simple_roe:.1f}% (평균자본 ROE와 상이)')
+    operating_cash,_=last_pair(annual,'operating_cash_flow')
+    if not is_financial and op is not None and op>0 and operating_cash is not None:
+        cash_ratio=operating_cash/op
+        tests.append((interp(cash_ratio,0,1.3),1))
+        notes.append(f'영업현금흐름/영업이익 {cash_ratio:.2f}배 (현금 창출력 참고)')
+    notes.append('ROE는 재무건전성에서 중복 채점하지 않고 가치평가에만 활용')
     results.append(score_record('재무건전성',0,tests,notes,'보통 · 업종별 정밀 보정 전'))
     # TECHNICAL
     tests=[];notes=[];last=indicators.get('last')
@@ -175,12 +177,12 @@ def evaluate(prices, annual, quarterly, flow, news, profile):
             notes.append(f'뉴스 {len(titles)}건 수집, 방향성 키워드 부족 → 점수 보류')
     results.append(score_record('뉴스 모멘텀',0,tests,notes,'낮음 · 제목 키워드만 판단'))
 
-    available=[r for r in results if r['score'] is not None]
-    covered=sum(r['weight'] for r in available)
-    total=round(sum(r['score']*r['weight'] for r in available)/covered,1) if covered else None
+    available=[r for r in results if r['score'] is not None and r.get('covered_weight',0)>0]
+    covered=round(sum(r['covered_weight'] for r in available),1)
+    total=round(sum(r['score']*r['covered_weight'] for r in available)/covered,1) if covered else None
     label=('평가 불가' if total is None else '긍정적 관심' if total>=75 else '중립·관찰' if total>=55 else '주의·재점검')
     return {'rows':results,'total':total,'coverage':covered,'label':label,'indicators':indicators,
-            'partial':covered<80,'available_count':len(available)}
+            'partial':covered<100,'available_count':len(available)}
 
 
 def explain(result):
