@@ -107,7 +107,12 @@ def evaluate(prices, annual, quarterly, flow, news, profile):
     if pbr and roe is not None and pbr>0 and roe>0:
         earnings_yield=roe/pbr*100 # fractional roe / pbr -> percentage approximation
         tests.append((interp(earnings_yield,2,15),1));notes.append(f'ROE/PBR 참고 지표 {earnings_yield:.1f}% (자기자본 효율 보정)')
-    results.append(score_record('밸류에이션',0,tests,notes,'낮음 · 업종 비교 미반영'))
+    if profile.get('__valuation_approx'):
+        notes.append('주의: '+str(profile.get('__valuation_approx_note') or '연간 실적·시가총액을 이용한 간이 추정입니다.'))
+    confidence = ('낮음 · KRX·DART 간이 추정 · 업종 비교 미반영'
+                  if profile.get('__valuation_approx')
+                  else '낮음 · 업종 비교 미반영')
+    results.append(score_record('밸류에이션',0,tests,notes,confidence))
     # FLOW
     tests=[];notes=[]
     if flow is not None and len(flow)>=5 and all(k in flow for k in ('외국인','기관')):
