@@ -4,6 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from valuation_context import _issuer_indicators, _raw_finite, _per_and_pbr
+from valuation_sources import display_valuation_ratios
 
 
 def test_extract_krx_fields_from_matching_issuer_only():
@@ -49,3 +50,53 @@ def test_app_displays_source_date_and_does_not_scrape_npay_financial_sidebar():
     assert "valuation_context.get('krx_dividend_yield')" in source
     assert "조회 기준일 {krx_date}" in source
     assert "('추정 EPS (Yahoo 추정 · 별도 기준)',profile.get('forwardEps')" in source
+
+
+
+def test_dated_krx_fills_lower_panel_when_yahoo_profile_has_missing_pe_pbr():
+    profile={"trailingPE":None,"priceToBook":None,"forwardPE":13.51}
+    context={"date":"2026-11-05","krx_per":14.21,"krx_pbr":1.0}
+    values=display_valuation_ratios(profile,context)
+    assert values["PER"]["value"]==14.21
+    assert values["PBR"]["value"]==1.0
+    assert values["PER"]["kind"]=="krx"
+    assert values["PER"]["source"]=="KRX 투자지표 · 2026-11-05"
+    assert profile["trailingPE"] is None
+    assert profile["forwardPE"]==13.51
+
+
+def test_display_krx_precedence_over_mixed_yahoo_basis():
+    values=display_valuation_ratios(
+        {"trailingPE":23.1,"priceToBook":3.2},
+        {"date":"2026-11-05","krx_per":14.21,"krx_pbr":1.0}
+    )
+    assert values["PER"]["value"]==14.21
+    assert values["PBR"]["value"]==1.0
+    assert all(v["kind"]=="krx" for v in values.values())
+
+
+def test_undated_krx_is_not_passed_as_verified():
+    values=display_valuation_ratios(
+        {"trailingPE":11,"priceToBook":None},
+        {"krx_per":14.21,"krx_pbr":1.0},
+    )
+    assert values["PER"]["value"]==11
+    assert values["PER"]["kind"]=="external"
+    assert values["PBR"]["value"] is None
+    assert values["PBR"]["kind"]=="missing"
+
+
+def test_dart_krx_approximation_stays_explicitly_approximate():
+    values=display_valuation_ratios(
+        {"trailingPE":12.1,"priceToBook":0.8,"__valuation_approx":["PER","PBR"]},{}
+    )
+    assert "간이" in values["PER"]["source"]
+    assert "간이" in values["PBR"]["source"]
+
+
+def test_app_lower_panel_uses_same_krx_values_as_top_panel():
+    app=(Path(__file__).resolve().parents[1]/"app.py").read_text(encoding="utf-8")
+    assert "display_ratios=display_valuation_ratios(profile,valuation_context)" in app
+    assert "display_ratios['PER']['value']" in app
+    assert "display_ratios['PBR']['value']" in app
+    assert "PER 출처:" in app and "PBR 출처:" in app
