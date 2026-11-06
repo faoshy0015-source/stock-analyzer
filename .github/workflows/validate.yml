@@ -22,6 +22,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests beautifulsoup4 pytest
       - name: Check Python syntax
-        run: python -m compileall -q app.py data_sources.py scoring.py valuation_model.py valuation_context.py valuation_sources.py report.py analyst_reports.py event_momentum.py financial_health_model.py
+        run: python -m compileall -q app.py data_sources.py scoring.py valuation_model.py valuation_context.py valuation_sources.py report.py analyst_reports.py event_momentum.py financial_health_model.py flow_model.py consensus_targets.py
       - name: Run unit tests
         run: python -m pytest -q tests/
