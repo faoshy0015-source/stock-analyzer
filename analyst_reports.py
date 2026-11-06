@@ -153,7 +153,7 @@ def _research_date(value):
         except (ValueError, OverflowError, OSError):
             return ""
     raw = _field_text(value)
-    if re.fullmatch(r"20\\d{6}", raw):
+    if re.fullmatch(r"20\d{6}", raw):
         raw = f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
     return _valid_date(raw)
 
