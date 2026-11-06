@@ -52,7 +52,7 @@ def _date(value):
 
 
 def _norm(text):
-    return re.sub(r"[\W_]+", "", str(text or "")).casefold()
+    return re.sub(r"[ㆍ·･\W_]+", "", str(text or "")).casefold()
 
 
 def _filing_type(title):
