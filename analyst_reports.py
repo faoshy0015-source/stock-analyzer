@@ -256,7 +256,7 @@ def get_analyst_reports(code, name, limit=15):
     try:
         all_rows = get_naver_reports(code, name)
         if not all_rows:
-            status.append("Npay 증권 응답에 해당 종목 리포트가 없습니다.")
+            status.append("Npay 증권 응답에서 표시 가능한 종목 리포트를 확인하지 못했습니다.")
     except requests.HTTPError as exc:
         code = getattr(exc.response, "status_code", None)
         status.append(f"Npay 증권 HTTP {code or '오류'} (제공처 접근·경로 확인 필요)")
