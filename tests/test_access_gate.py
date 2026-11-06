@@ -112,6 +112,11 @@ def test_login_ui_is_centered_and_green_but_password_stays_server_side():
     assert "linear-gradient(122deg, #07483f" in page
     assert 'data-testid="stForm"' in page
     assert "Stock Analyzer" in page
+    assert "STOCK ANALYZER · SECURE ACCESS" in page
+    assert "CREATED BY K.H.AHN" in page
+    assert '<div class="hanav-auth-logo">SA</div>' in page
+    assert "HANAV INVESTMENT INTELLIGENCE" not in page
+    assert "HANAV · PRIVATE RESEARCH WORKSPACE" not in page
     assert "do-not-leak" not in page
     assert st.form_rendered
 
