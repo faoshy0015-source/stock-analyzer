@@ -10,6 +10,7 @@ import streamlit as st
 from data_sources import (SEED, seed_listing, get_listing, get_corp_codes,
                           find_instrument, clean_code, get_prices, get_profile,
                           get_investor_flows, dart_disclosures, dart_financials, get_news,
+                          get_corp_codes_diagnostic, DART_KNOWN_CORP_CODES,
                           get_kis_access_token, get_kis_quote)
 from scoring import evaluate, explain, pct_change, number
 from report import render_html, snapshot
@@ -50,7 +51,7 @@ def cached_kis_quote(code,appkey,secret,token):return get_kis_quote(code,appkey,
 def cached_listing():return get_listing()
 
 @st.cache_data(ttl=86400,show_spinner=False)
-def cached_corp_codes(key):return get_corp_codes(key)
+def cached_corp_codes(key):return get_corp_codes_diagnostic(key)
 
 @st.cache_data(ttl=1800,show_spinner=False)
 def cached_price(code,market):return get_prices(code,market)
@@ -129,7 +130,7 @@ with st.sidebar:
             st.session_state['krx_listing']=cached_listing()
     if api_key and st.button('DART 상장사 목록 불러오기',use_container_width=True):
         with st.spinner('DART 기업코드 ZIP 읽는 중...'):
-            st.session_state['dart_listing']=cached_corp_codes(api_key)
+            st.session_state['dart_listing'],st.session_state['dart_load_error']=cached_corp_codes(api_key)
     if st.button('새로고침 (캐시 초기화)',use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -163,13 +164,16 @@ if not resolved:
 if api_key and dart_list.empty:
     # Fetch once when the user starts analyzing a listed stock, no prior manual setup.
     with st.spinner('DART 기업코드 확인...'):
-        dart_list=cached_corp_codes(api_key)
+        dart_list,dart_error=cached_corp_codes(api_key)
+        st.session_state['dart_load_error']=dart_error
         if not dart_list.empty:st.session_state['dart_listing']=dart_list
-corp_code=''
+corp_code=DART_KNOWN_CORP_CODES.get(resolved['code'],'')
+known_dart_fallback=bool(corp_code)
 if not dart_list.empty:
     match=dart_list[dart_list['code']==resolved['code']]
     if not match.empty:
         corp_code=str(match.iloc[0]['corp_code'])
+        known_dart_fallback=False
         if resolved['name'].startswith('종목 '):resolved['name']=str(match.iloc[0]['name'])
 
 with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False) as status:
@@ -211,7 +215,12 @@ if prices.empty:
 if not api_key:
     st.info('OpenDART 인증키가 Secrets에 설정되지 않았습니다. 재무제표·실적 분석·공시 항목은 미산출됩니다. Streamlit 앱 설정의 Secrets에 DART_API_KEY를 추가하세요.')
 elif not corp_code:
-    st.warning('이 종목의 DART 고유번호를 찾지 못했습니다. 재무제표·공시 항목을 미산출 처리합니다.')
+    dart_error=st.session_state.get('dart_load_error','')
+    st.warning('이 종목의 DART 고유번호를 찾지 못해 재무·공시 분석을 보류합니다.' + (f' DART 오류: {dart_error}' if dart_error else ''))
+elif known_dart_fallback:
+    st.info('DART 전체 기업 목록 조회가 정상 완료되지 않아, 공식 확인된 삼성전자 DART 고유번호로 재무·공시 조회를 시도합니다.')
+    if annual.empty and disclosures.empty:
+        st.warning('고유번호를 확인했지만 DART 재무·공시 응답이 없습니다. Secrets의 DART_API_KEY 유효성·접근 권한·호출 제한을 확인하세요.')
 if flow_error:st.caption(f'참고: {flow_error}')
 
 m1,m2,m3,m4=st.columns([1.1,1,1,1])
