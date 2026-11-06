@@ -1,4 +1,4 @@
-"""HanaV Stock Analyzer v1.0 — Korea equity research, transparent sources."""
+"""HanaV Stock Analyzer v1.2 — Korea equity research, transparent sources."""
 from __future__ import annotations
 import json
 from datetime import datetime
@@ -122,7 +122,7 @@ def line_chart(df, cols, title='', ytitle=''):
     return fig
 
 
-st.markdown('''<div class="brand"><div class="eyebrow">HANAV INVESTMENT INTELLIGENCE · VERSION 1.0</div>
+st.markdown('''<div class="brand"><div class="eyebrow">HANAV INVESTMENT INTELLIGENCE · VERSION 1.2</div>
 <h1>Stock Analyzer</h1><p>주가 · 기업실적 · 밸류에이션 · 수급 · 뉴스 · 종합 평가</p></div>''',unsafe_allow_html=True)
 
 with st.sidebar:
@@ -706,4 +706,4 @@ with t6:
             st.error('유효한 HanaV 스냅샷 JSON을 읽지 못했습니다.')
 
 st.divider()
-st.caption('HanaV Stock Analyzer v1.1 | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS · 증권사 리포트: Npay 증권(종목코드 조회)·한경 컨센서스(보조). 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
+st.caption('HanaV Stock Analyzer v1.2 | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS · 증권사 리포트: Npay 증권(종목코드 조회)·한경 컨센서스(보조). 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
