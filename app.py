@@ -20,6 +20,7 @@ from valuation_context import fetch_valuation_context
 from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH, NAVER_ITEM_RESEARCH
 from flow_model import fetch_krx_turnover_context
 from consensus_targets import summarize_targets, naver_published_consensus
+from access_gate import require_login
 
 st.set_page_config(page_title='HanaV Stock Analyzer', page_icon='📊', layout='wide',
                    initial_sidebar_state='expanded')
@@ -47,6 +48,12 @@ html,body,[class*="css"]{font-family:"Pretendard","Noto Sans KR","Malgun Gothic"
 def secret(name):
     try:return str(st.secrets.get(name,'') or '').strip()
     except Exception:return ''
+
+
+# Authenticate before rendering the dashboard or contacting external APIs.
+# Password is read only from Streamlit Secrets, never from GitHub files.
+require_login(st)
+
 
 @st.cache_data(ttl=21600,show_spinner=False)
 def cached_kis_token(appkey,secret):return get_kis_access_token(appkey,secret)
@@ -160,6 +167,10 @@ with st.sidebar:
             if diag.get('코드'): msg+=f" (DART 상태코드 {diag['코드']})"
             if diag.get('상태')=='정상':st.success(msg)
             else:st.warning(msg)
+    st.divider()
+    if st.button('🔒 로그아웃', use_container_width=True):
+        st.session_state.pop('_hanav_stock_authenticated',None)
+        st.rerun()
     st.caption('• OpenDART·KIS 인증정보는 Streamlit Secrets에서 관리합니다.')
     st.caption('• 데이터는 실시간 체결 시세가 아닐 수 있습니다.')
     st.caption('• 투자 권유가 아닌 참고용 리서치 도구입니다.')
