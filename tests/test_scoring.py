@@ -31,6 +31,8 @@ def test_perfect_missing_ratio_not_misleading():
     r=evaluate(px,pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),{})
     assert r['coverage']==10
     assert sum(WEIGHTS.values())==100
+    assert WEIGHTS['재무건전성']==20
+    assert WEIGHTS['뉴스 모멘텀']==10
 
 
 def test_financial_source_interim_3_months_vs_cumulative():
