@@ -15,6 +15,7 @@ from data_sources import (SEED, seed_listing, get_listing, get_corp_codes,
                           get_kis_access_token, get_kis_quote)
 from scoring import evaluate, explain, pct_change, number
 from report import render_html, snapshot
+from valuation_sources import krx_company_marketcap, fill_valuation, positive
 from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH, NAVER_ITEM_RESEARCH
 
 st.set_page_config(page_title='HanaV Stock Analyzer', page_icon='📊', layout='wide',
@@ -61,6 +62,9 @@ def cached_price(code,market):return get_prices(code,market)
 
 @st.cache_data(ttl=7200,show_spinner=False)
 def cached_profile(symbol):return get_profile(symbol)
+
+@st.cache_data(ttl=43200,show_spinner=False)
+def cached_krx_valuation(code,market,key):return krx_company_marketcap(code,market,key)
 
 @st.cache_data(ttl=3600,show_spinner=False)
 def cached_flow(code):return get_investor_flows(code)
@@ -130,6 +134,8 @@ with st.sidebar:
     openai_key=typed_openai_key.strip() or secret('OPENAI_API_KEY')
     kis_key=secret('KIS_APP_KEY')
     kis_secret=secret('KIS_APP_SECRET')
+    krx_key=(secret('KRX_API_KEY') or secret('KRX_AUTH_KEY') or
+             secret('KRX_OPEN_API_KEY') or secret('KRX_KEY') or secret('AUTH_KEY'))
     st.divider()
     st.caption('종목 검색 범위')
     if st.button('KRX 전체 종목 목록 불러오기',use_container_width=True):
@@ -215,6 +221,13 @@ with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False)
     else:
         annual,quarterly,fs_scope,disclosures=pd.DataFrame(),pd.DataFrame(),'',pd.DataFrame()
     incomplete=bool(prices.empty or (api_key and annual.empty) or flows.empty)
+    krx_cap={};krx_valuation_error=''
+    if krx_key and (not positive(profile.get('trailingPE')) or
+                    not positive(profile.get('priceToBook')) or
+                    not positive(profile.get('marketCap'))):
+        st.write('KRX 시가총액 기반 밸류에이션 대체 조회')
+        krx_cap,krx_valuation_error=cached_krx_valuation(resolved['code'],resolved['market'],krx_key)
+    profile=fill_valuation(profile,krx_cap,annual,kis_snapshot)
     status.update(label='데이터 확인 완료 · 일부 항목 미수신' if incomplete else '분석 데이터 준비 완료',state='complete',expanded=False)
 
 scores=evaluate(prices,annual,quarterly,flows,news,profile)
@@ -370,11 +383,25 @@ with t3:
     vc1,vc2=st.columns(2)
     with vc1:
         st.subheader('밸류에이션')
-        vals=[('PER (최근 실적)',profile.get('trailingPE'),'배'),('Forward PER (외부 제공)',profile.get('forwardPE'),'배'),
-              ('PBR',profile.get('priceToBook'),'배'),('ROE (외부 제공)',(number(profile.get('returnOnEquity')) or 0)*100 if profile.get('returnOnEquity') is not None else None,'%'),
-              ('시가총액 (외부 제공)',profile.get('marketCap'),'원')]
+        approx=profile.get('__valuation_approx',[])
+        vals=[('PER (DART·KRX 간이)' if 'PER' in approx else 'PER (최근 실적)',profile.get('trailingPE'),'배'),
+              ('Forward PER (외부 제공)',profile.get('forwardPE'),'배'),
+              ('PBR (DART·KRX 간이)' if 'PBR' in approx else 'PBR',profile.get('priceToBook'),'배'),
+              ('ROE (외부 제공)',(number(profile.get('returnOnEquity')) or 0)*100 if profile.get('returnOnEquity') is not None else None,'%'),
+              ('시가총액 (외부 제공 또는 KRX)',profile.get('marketCap'),'원')]
         for label,val,unit in vals:
             st.write(f'**{label}:** {won(val) if unit=="원" else fmt(val,unit,2)}')
+        st.caption('현재 지표 출처: '+str(profile.get('__valuation_source') or '확인 불가'))
+        if profile.get('__krx_marketcap_date'):
+            classes=profile.get('__krx_share_classes',[])
+            st.caption('KRX 시가총액 기준일: '+profile['__krx_marketcap_date']+
+                       (' · 합산 주식코드: '+', '.join(map(str,classes)) if classes else ''))
+        if profile.get('__valuation_approx_note'):
+            st.warning(profile['__valuation_approx_note'])
+        if not positive(profile.get('trailingPE')) or not positive(profile.get('priceToBook')):
+            st.info('PER·PBR이 일부 미산출입니다. KRX 인증키는 Secrets의 KRX_API_KEY(또는 KRX_AUTH_KEY 등)로 읽습니다. KRX 공식 일별매매정보 API 활용신청이 필요하며, DART 연간 실적이 없으면 간이 계산을 하지 않습니다.')
+        if krx_valuation_error:
+            st.caption('KRX 조회 상태: '+krx_valuation_error)
         st.caption('Yahoo Finance 제공 지표는 결측/지연 가능. Forward PER은 제공처 추정치이며 공식 증권사 컨센서스 검증을 대체하지 않습니다.')
         st.info('1.0 버전 밸류에이션 점수는 PER·PBR 절대수준과 ROE/PBR 보정의 초기 휴리스틱입니다. 과거 PER 밴드와 업종 경쟁사 비교는 후속 버전에서 정식 데이터 확보 후 제공됩니다.')
     with vc2:
