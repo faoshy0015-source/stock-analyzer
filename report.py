@@ -32,7 +32,7 @@ def render_html(instrument, result, narrative, price, stamp, sources):
     <div class="card"><div class="sub">데이터 충족률 (배점 기준)</div><div class="big">{result['coverage']}%</div></div></div>
     <h2>종합 의견 | {safe(result['label'])}</h2><div class="alert">{safe(narrative)}</div>
     <h2>항목별 평가와 근거</h2><table><thead><tr><th>영역</th><th>전체 배점</th><th>반영 배점</th><th>평가 점수</th><th>주요 근거</th></tr></thead><tbody>{rows}</tbody></table>
-    <footer>자료: {safe('; '.join(str(v) for v in sources.values() if v))}. 분석 시점 {safe(datetime.now().strftime('%Y-%m-%d %H:%M'))}.<br/>본 문서는 투자 참고용으로, 수익을 보장하거나 매수·매도를 권유하지 않습니다. 시세는 지연되거나 데이터 공급처가 변경될 수 있습니다. 공개 재무는 제출 시점 이후 반영되며 과거 실적은 미래 성과를 보장하지 않습니다. 밸류에이션은 동종업종 PER(6), 과거 PER·PBR 밴드(5), ROE 보정 PBR(5), 동기준 Forward PER(4)의 확보된 증거에만 점수를 부여합니다. 전망 컨센서스, 과거자료 또는 KRX 비교 데이터가 없으면 해당 세부 배점을 제외하며, 업종 및 회계기준 차이로 평가 신뢰도가 제한됩니다. 외부 배포 전 데이터 권리·회사 준법 절차를 확인하세요.</footer></main></body></html>'''
+    <footer>자료: {safe('; '.join(str(v) for v in sources.values() if v))}. 분석 시점 {safe(datetime.now().strftime('%Y-%m-%d %H:%M'))}.<br/>본 문서는 투자 참고용으로, 수익을 보장하거나 매수·매도를 권유하지 않습니다. 시세는 지연되거나 데이터 공급처가 변경될 수 있습니다. 공개 재무는 제출 시점 이후 반영되며 과거 실적은 미래 성과를 보장하지 않습니다. 밸류에이션은 동종업종 PER(6), 과거 PER·PBR 밴드(5), 3개년 ROE 지속성(5), 동기준 Forward PER(4)의 확인된 증거만 평가합니다. 재무건전성은 부채비율(5), 영업현금흐름 전환율(6), 이자보상배율(5), 유동비율(4)을 검증된 배점만 반영합니다. 전망 컨센서스, 과거자료 또는 KRX 비교 데이터가 없으면 해당 세부 배점을 제외하며, 업종 및 회계기준 차이로 평가 신뢰도가 제한됩니다. 외부 배포 전 데이터 권리·회사 준법 절차를 확인하세요.</footer></main></body></html>'''
 
 
 def snapshot(instrument, result, stamp):
