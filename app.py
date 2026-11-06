@@ -15,6 +15,7 @@ from data_sources import (SEED, seed_listing, get_listing, get_corp_codes,
                           get_kis_access_token, get_kis_quote)
 from scoring import evaluate, explain, pct_change, number
 from report import render_html, snapshot
+from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH
 
 st.set_page_config(page_title='HanaV Stock Analyzer', page_icon='📊', layout='wide',
                    initial_sidebar_state='expanded')
@@ -72,6 +73,9 @@ def cached_news(name):return get_news(name)
 
 @st.cache_data(ttl=3600,show_spinner=False)
 def cached_disclosures(key,corp):return dart_disclosures(key,corp)
+
+@st.cache_data(ttl=3600,show_spinner=False)
+def cached_analyst_reports(code,name):return get_analyst_reports(code,name,limit=18)
 
 
 def fmt(v, unit='', decimal=1):
@@ -292,7 +296,7 @@ if st.session_state.get('ai_narrative',(None,None))[0] == resolved['code']:
     st.success('OpenAI 생성 종합 의견 (정량 점수는 변경하지 않음)')
     st.write(st.session_state['ai_narrative'][1])
 
-t1,t2,t3,t4,t5=st.tabs(['📉 주가·기술적','📊 실적·재무','🏛️ 가치평가·수급','📰 뉴스·공시','📥 리포트·기록'])
+t1,t2,t3,t4,t5,t6=st.tabs(['📉 주가·기술적','📊 실적·재무','🏛️ 가치평가·수급','📰 뉴스·공시','📑 애널리스트 리포트','📥 내보내기·기록'])
 
 with t1:
     if prices.empty:
@@ -413,6 +417,39 @@ with t4:
             st.markdown(f'[{title}](https://dart.fss.or.kr/dsaf001/main.do?rcpNo={no})  ·  {date}')
 
 with t5:
+    st.subheader('최근 애널리스트 리포트')
+    st.caption('증권사에서 발행한 기업분석 리포트의 제목·발행일·작성자·원문 링크입니다. 리포트 원문은 발행처에서 열립니다.')
+    with st.spinner('최근 증권사 리포트 조회 중...'):
+        analyst_reports,analyst_error=cached_analyst_reports(resolved['code'],resolved['name'])
+    if analyst_reports.empty:
+        st.info('최근 6개월 내 확인된 애널리스트 리포트를 자동으로 찾지 못했습니다. 출처의 검색·접근 정책에 따라 자동 수집이 제한될 수 있습니다.')
+        if analyst_error:st.caption(analyst_error)
+    else:
+        st.caption(f"최근 6개월 내 확인된 기업 리포트 {len(analyst_reports)}건 · 발행일 최신순")
+        for _,report_row in analyst_reports.iterrows():
+            rpt_title=str(report_row['title'])
+            rpt_link=str(report_row['url'])
+            rpt_date=str(report_row['date'])
+            rpt_broker=str(report_row['broker'] or '발행기관 미표기')
+            rpt_analyst=str(report_row['analyst'] or '')
+            rpt_target=str(report_row['target_price'] or '')
+            if rpt_link.startswith(('https://','http://')):
+                st.link_button(f"📄 {rpt_title}",rpt_link,help='원문 제공 사이트에서 열기',use_container_width=True)
+            else:
+                st.write(rpt_title)
+            rpt_detail=f"발행 {rpt_date} · {rpt_broker}"
+            if rpt_analyst:rpt_detail+=f" · {rpt_analyst}"
+            if rpt_target:rpt_detail+=f" · 목표주가 {rpt_target}"
+            st.caption(rpt_detail)
+        st.caption('발행일·목표가·투자의견은 원문 작성 시점의 판단입니다. 최신 데이터·분할조정 여부는 원문에서 확인하세요.')
+    st.divider()
+    st.markdown('**전체 리포트 출처에서 직접 검색**')
+    col_hk,col_nv=st.columns(2)
+    col_hk.link_button('한경 컨센서스 리포트 검색',HANKYUNG_PORTAL,use_container_width=True)
+    col_nv.link_button('Npay 증권 리서치',NAVER_RESEARCH,use_container_width=True)
+    st.caption('보고서의 PDF를 앱 서버에 저장하거나 재배포하지 않습니다. 자동 수집 실패 시 원문 제공처에서 종목명을 검색하세요.')
+
+with t6:
     st.subheader('저장 · 보고서 내보내기')
     report_text=st.session_state.get('ai_narrative',(None,None))
     final_text=report_text[1] if report_text[0]==resolved['code'] else explain(scores)
@@ -452,4 +489,4 @@ with t5:
             st.error('유효한 HanaV 스냅샷 JSON을 읽지 못했습니다.')
 
 st.divider()
-st.caption('HanaV Stock Analyzer v1.0 | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS. 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
+st.caption('HanaV Stock Analyzer v1.0 | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS · 증권사 리포트: 한경 컨센서스 공개 원문 링크. 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
