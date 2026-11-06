@@ -209,10 +209,18 @@ def parse_naver_research(payload, code, name):
                 goal = ""
         except ValueError:
             pass
+        # Prefer the publisher-provided article address when it is a valid
+        # Naver HTTPS link. Otherwise, use the stock-specific research route.
+        canonical = NAVER_ITEM_RESEARCH.format(code=code) + "/" + nid
+        provider_href = _field_text(_first_value(entry, "endUrl", "reportUrl", "detailUrl"))
+        original = _safe_original_url(provider_href, NAVER_RESEARCH) if provider_href else ""
+        host = (urlparse(original).hostname or "").lower() if original else ""
+        if not (host == "naver.com" or host.endswith(".naver.com")):
+            original = canonical
         rows.append({
             "date": d, "title": title, "broker": broker,
             "analyst": analyst, "target_price": goal,
-            "url": NAVER_ITEM_RESEARCH.format(code=code) + "/" + nid,
+            "url": original,
             "source": "Npay 증권",
         })
     return rows
