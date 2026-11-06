@@ -206,13 +206,16 @@ def explain(result):
                  if (r.get('covered_weight') or 0)>=0.60*r['weight']]
     compared=substantial if substantial else usable
     best=max(compared,key=lambda r:r['score'])
-    risk=min(compared,key=lambda r:r['score'])
+    risk=min(compared,key=lambda r:r['score']) if len(compared)>1 else None
     coverage=result.get('coverage',0)
     total=result.get('total')
     msg=(f"검증 가능한 {coverage:g}/100점 배점을 재가중한 "
          f"{'잠정 ' if coverage < 100 else ''}종합 평가: {total:.1f}/100점. "
-         f"상대적으로 점수가 높은 분야는 {_scope_label(best)}이고, "
-         f"확인이 필요한 분야는 {_scope_label(risk)}입니다.")
+         f"상대적으로 점수가 높은 분야는 {_scope_label(best)}입니다.")
+    if risk is not None:
+        msg+=f" 확인이 필요한 분야는 {_scope_label(risk)}입니다."
+    else:
+        msg+=" 다른 분야는 충분히 비교할 자료가 부족합니다."
     missing=[f"{r['category']} {r['weight']-r.get('covered_weight',0):g}점"
              for r in result['rows']
              if r['weight']>r.get('covered_weight',0)]
@@ -220,8 +223,9 @@ def explain(result):
         msg+=' 아직 확인되지 않은 배점: '+', '.join(missing)+'.'
     finance=next((r for r in result['rows'] if r['category']=='재무건전성'),None)
     if finance and 0 < finance.get('covered_weight',0) < finance['weight']:
-        msg+=(' 재무건전성 점수는 확인된 세부 지표만의 평균으로, '
-              '미확인된 재무 위험까지 안전하다고 판정한 것이 아닙니다.')
+        msg+=(f" 재무건전성 검증 {finance.get('covered_weight',0):g}/{finance['weight']:g}점 배점: "
+              "확인된 세부 지표만의 평균이며, "
+              "미확인된 재무 위험까지 안전하다고 판정한 것이 아닙니다.")
     if result.get('partial'):
         msg+=' 데이터 누락이 있어 다른 종목의 완전한 평가와 직접 비교하지 마세요.'
     return msg
