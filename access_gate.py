@@ -13,6 +13,10 @@ PASSWORD_SECRET_NAMES = (
     "LOGIN_PASSWORD",
     "ACCESS_PASSWORD",
     "PASSWORD",
+    "APP_PASS",
+    "APP_PW",
+    "STOCK_ANALYZER_PASSWORD",
+    "ADMIN_PASSWORD",
     "app_password",
     "password",
 )
@@ -27,7 +31,7 @@ def configured_password(secrets):
     for name in PASSWORD_SECRET_NAMES:
         try:
             value = secrets.get(name)
-        except (AttributeError, KeyError, TypeError, ValueError):
+        except Exception:  # absent/unconfigured Streamlit Secrets: fail closed
             continue
         if isinstance(value, str) and value.strip():
             return value.strip()
