@@ -204,3 +204,39 @@ def fill_valuation(profile, krx_snapshot, annual, kis_snapshot=None):
     result["__krx_marketcap_date"] = str(krx_snapshot.get("date") or "")
     result["__krx_share_classes"] = krx_snapshot.get("included_classes", [])
     return result
+
+
+def display_valuation_ratios(profile, context):
+    """Choose a dated KRX metric for UI first; never mutate scoring inputs.
+
+    Different sources can use TTM, annual, consolidated or separate accounting
+    definitions. A valid, dated KRX PER/PBR must not appear as missing merely
+    because Yahoo's unrelated profile fields were absent.
+    """
+    profile=profile or {}
+    context=context or {}
+    source_date=str(context.get("date") or "").strip()
+    result={}
+    approximate=set(profile.get("__valuation_approx") or [])
+    for name,profile_key,krx_key in (
+        ("PER","trailingPE","krx_per"),
+        ("PBR","priceToBook","krx_pbr"),
+    ):
+        krx=positive(context.get(krx_key)) if source_date else None
+        other=positive(profile.get(profile_key))
+        if krx is not None:
+            result[name]={
+                "value":krx,
+                "source":f"KRX 투자지표 · {source_date}",
+                "kind":"krx",
+            }
+        elif other is not None:
+            result[name]={
+                "value":other,
+                "source":("KRX·DART 연간 간이 산출" if name in approximate
+                          else "Yahoo/KIS 별도 기준(개별 원천 확인 필요)"),
+                "kind":"approx" if name in approximate else "external",
+            }
+        else:
+            result[name]={"value":None,"source":"미확인","kind":"missing"}
+    return result
