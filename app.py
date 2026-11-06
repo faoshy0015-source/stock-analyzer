@@ -305,7 +305,8 @@ if target_summary['average'] is not None:
               f"{target_summary['upside_pct']:+.2f}%" if target_summary['upside_pct'] is not None else '—',
               help='(평균 목표주가 / 조회 시점 가격 - 1) × 100. 수익률 예측이 아닙니다.')
     a3.metric('반영 증권사 수',f"{target_summary['count']}곳")
-    st.caption(f"기준 가격 {fmt(target_summary.get('price'),'원',0)}"
+    st.caption(f"목표주가 분포 {target_summary['min']:,.0f}~{target_summary['max']:,.0f}원 · "
+               f"기준 가격 {fmt(target_summary.get('price'),'원',0)}"
                f" ({'KIS 조회 시점 가격' if kis_snapshot else '최종 확인 종가'}, {target_summary.get('price_asof') or '날짜 확인 불가'})"
                " · 리포트 발행 최근 90일 · 중복 증권사 제외 · 가격·목표가의 수정주가 반영 여부 주의")
 elif published_target:
@@ -624,7 +625,8 @@ with t5:
         } for item in target_summary['rows']]),
             column_config={'원문':st.column_config.LinkColumn('원문 리포트')},
             hide_index=True,use_container_width=True)
-        st.caption('최근 90일, 증권사별 가장 최근 리포트 1건만 반영한 단순 산술평균입니다. '
+        st.caption(f"목표주가 범위 {target_summary['min']:,.0f}~{target_summary['max']:,.0f}원 · "
+                   '최근 90일, 증권사별 가장 최근 리포트 1건만 반영한 단순 산술평균입니다. '
                    '서로 다른 증권사 2곳 이상 기준이며, 수익률이나 적정가치를 보장하지 않습니다.')
     elif published_target:
         st.metric('Npay 제공 목표주가 컨센서스 (별도 집계)',
