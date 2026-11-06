@@ -109,7 +109,10 @@ def test_login_ui_is_centered_and_green_but_password_stays_server_side():
         require_login(st)
     page="\n".join(st.markup)
     assert "hanav-auth-hero" in page
-    assert "linear-gradient(122deg, #07483f" in page
+    assert "linear-gradient(122deg, #e8f6ed" in page
+    assert "border-left: 5px solid #e87d31" in page
+    assert "background: linear-gradient(100deg, #d7752b, #ed9c4e)" in page
+    assert "#07483f" not in page
     assert 'data-testid="stForm"' in page
     assert "Stock Analyzer" in page
     assert "STOCK ANALYZER · SECURE ACCESS" in page
