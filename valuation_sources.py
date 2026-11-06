@@ -152,6 +152,22 @@ def fill_valuation(profile, krx_snapshot, annual, kis_snapshot=None):
                 result["__valuation_source"] = "한국투자증권 KIS REST"
     marketcap = positive(krx_snapshot.get("marketcap"))
     fy = _latest_annual(annual)
+    if fy:
+        ni = positive(fy.get("net_income"))
+        eq = positive(fy.get("equity"))
+        if not positive(result.get("returnOnEquity")) and ni and eq:
+            # Last available comparable FY equity improves over single closing book.
+            prev_rows = annual[annual["period"].astype(str) ==
+                               str(int(fy["period"]) - 1)] if annual is not None else pd.DataFrame()
+            prev_eq = positive(prev_rows.iloc[-1].get("equity")) if not prev_rows.empty else None
+            denom = (eq + prev_eq) / 2 if prev_eq else eq
+            if denom > 0:
+                result["returnOnEquity"] = ni / denom
+                result["__roe_approx"] = True
+                result["__roe_approx_note"] = (
+                    f"DART {fy['period']}년 당기순이익/전기말·당기말 자본 평균 기준 간이 ROE; "
+                    "지배주주 귀속분 미조정"
+                )
     if marketcap and fy:
         ni = positive(fy.get("net_income"))
         eq = positive(fy.get("equity"))
@@ -177,8 +193,9 @@ def fill_valuation(profile, krx_snapshot, annual, kis_snapshot=None):
             result["__valuation_source"] = (
                 result["__valuation_source"] + " + KRX·DART 간이 계산"
             )
-    if not positive(result.get("marketCap")) and marketcap:
+    if marketcap and (result.get("__valuation_approx") or not positive(result.get("marketCap"))):
         result["marketCap"] = marketcap
+        result["__marketcap_source"] = "KRX(보통주+확인된 우선주 합산)"
     result["__krx_marketcap_date"] = str(krx_snapshot.get("date") or "")
     result["__krx_share_classes"] = krx_snapshot.get("included_classes", [])
     return result
