@@ -114,19 +114,6 @@ def line_chart(df, cols, title='', ytitle=''):
     return fig
 
 
-def narrative_ai(key, instrument, score, source_text):
-    from openai import OpenAI
-    client=OpenAI(api_key=key,timeout=25,max_retries=1)
-    payload={'company':instrument,'score':score['total'],'coverage_percent':score['coverage'],
-             'categories':[{k:v for k,v in row.items() if k in ('category','score','notes','confidence')} for row in score['rows']],
-             'data_asof':source_text}
-    answer=client.chat.completions.create(model='gpt-4o-mini',temperature=0.2,
-       max_tokens=650,messages=[
-        {'role':'system','content':'당신은 한국 주식 리서치 담당 분석가입니다. 입력된 사실만 사용하세요. 추정 수치, 목표주가, 허구의 컨센서스, 출처 없는 사실을 만들지 마세요. 뉴스 제목의 키워드 점수는 낮은 신뢰도라고 표시하세요. 정확한 정보의 기준일, 누락 데이터, 투자 위험을 설명하세요. 매수·매도 확정 권유 금지. 4개 짧은 문단: 종합/강점/위험/체크포인트. 한국어.'},
-        {'role':'user','content':json.dumps(payload,ensure_ascii=False,default=str)}])
-    return answer.choices[0].message.content or ''
-
-
 st.markdown('''<div class="brand"><div class="eyebrow">HANAV INVESTMENT INTELLIGENCE · VERSION 1.0</div>
 <h1>Stock Analyzer</h1><p>주가 · 기업실적 · 밸류에이션 · 수급 · 뉴스 · 종합 평가</p></div>''',unsafe_allow_html=True)
 
@@ -136,9 +123,6 @@ with st.sidebar:
     q=st.text_input('종목명 또는 6자리 종목코드',value=st.session_state.get('query','005930'),
                     placeholder='예: 삼성전자 또는 005930')
     api_key=secret('DART_API_KEY')
-    typed_openai_key=st.text_input('OpenAI API 키 (선택)',value='',
-                             type='password',help='입력값은 세션에서 사용합니다. Secrets의 키는 브라우저에 표시하지 않습니다. AI 의견 호출 시 별도 비용이 발생합니다.')
-    openai_key=typed_openai_key.strip() or secret('OPENAI_API_KEY')
     kis_key=secret('KIS_APP_KEY')
     kis_secret=secret('KIS_APP_SECRET')
     krx_key=(secret('KRX_API_KEY') or secret('KRX_AUTH_KEY') or
@@ -248,7 +232,7 @@ with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False)
                 not positive(profile.get('priceToBook')))
     status.update(label='데이터 확인 완료 · 일부 항목 미수신' if incomplete else '분석 데이터 준비 완료',state='complete',expanded=False)
 
-scores=evaluate(prices,annual,quarterly,flows,news,profile)
+scores=evaluate(prices,annual,quarterly,flows,news,profile,disclosures)
 indicator=scores['indicators']
 price=indicator.get('last')
 prev=indicator.get('prev')
@@ -316,24 +300,11 @@ with right:
                       else f"{r['score']:.1f}") if r['score'] is not None else '미산출',
         '신뢰도':r['confidence']} for r in scores['rows']]),hide_index=True,use_container_width=True)
     with st.expander('점수 계산 원칙 · 산출 근거',expanded=True):
-        st.write('점수는 규칙 기반 계산이며 OpenAI 모델이 산출하지 않습니다. 결측 영역·세부 배점은 0점으로 간주하지 않고 실제 검증된 배점으로 재정규화합니다.')
+        st.write('점수는 별도 API 비용 없는 규칙 기반 계산입니다. 누락 배점은 0점 또는 중립으로 채우지 않고, 검증된 배점만 재정규화합니다.')
         for r in scores['rows']:
             st.markdown(f"**{r['category']} · {fmt(r['score'],'점')} / 반영 {r.get('covered_weight',0):g}점 · 전체 배점 {r['weight']}점**")
             for note in r['notes'][:5]:st.caption('• '+note)
             if not r['notes']:st.caption('• 확인 가능한 평가 데이터 없음')
-
-if openai_key:
-    if st.button('✨ 선택: OpenAI로 종합 의견 다시 작성 (API 비용 발생)',type='primary'):
-        with st.spinner('근거 기반 문장 생성 중...'):
-            try:
-                st.session_state['ai_narrative']=(resolved['code'],narrative_ai(openai_key,resolved,scores,price_date))
-            except Exception as exc:
-                st.error(f'AI 호출 실패: {exc}')
-else:
-    st.caption('기본 종합 의견은 무료 규칙 기반입니다. OpenAI API 키를 입력하면 실제 생성형 AI 분석을 선택적으로 실행할 수 있습니다.')
-if st.session_state.get('ai_narrative',(None,None))[0] == resolved['code']:
-    st.success('OpenAI 생성 종합 의견 (정량 점수는 변경하지 않음)')
-    st.write(st.session_state['ai_narrative'][1])
 
 t1,t2,t3,t4,t5,t6=st.tabs(['📉 주가·기술적','📊 실적·재무','🏛️ 가치평가·수급','📰 뉴스·공시','📑 애널리스트 리포트','📥 내보내기·기록'])
 
@@ -513,8 +484,40 @@ with t3:
             st.caption('순매수 단위는 거래대금(원)입니다. KRX 조회 가능 범위에 따라 데이터가 달라질 수 있습니다.')
 
 with t4:
+    st.subheader('공시·뉴스 기반 이벤트 모멘텀')
+    event_row=next(r for r in scores['rows'] if r['category']=='뉴스 모멘텀')
+    parts=event_row.get('components',[])
+    if parts:
+        st.dataframe(pd.DataFrame([{
+            '구성':part['name'],'배점':part['weight'],
+            '검증 배점':part['covered_weight'],
+            '점수':f"{part['score']:.1f}" if part['score'] is not None else '미산출',
+            '판정':part['status'],
+        } for part in parts]),hide_index=True,use_container_width=True)
+        st.caption(f"검증 {event_row.get('covered_weight',0):g}/10점 배점. "
+                   "공시 제목(6점)과 서로 다른 매체의 최근 뉴스 제목(4점)으로만 평가합니다. "
+                   "기사 본문을 읽거나 이벤트의 재무영향을 검증하지 않은 낮은 신뢰도의 참고 지표입니다.")
+        with st.expander('모멘텀 평가 근거와 한계'):
+            for part in parts:
+                st.markdown(f"**{part['name']} · {part['status']}**")
+                st.caption(part['evidence'])
+    events=event_row.get('events',[])
+    if events:
+        st.markdown('**탐지된 주요 이벤트 (원문 바로가기)**')
+        for item in sorted(events,key=lambda event:event.get('date',''),reverse=True)[:12]:
+            link=str(item.get('link',''))
+            title=str(item.get('title',''))
+            if link.startswith(('https://','http://')):
+                st.markdown(f"[{title}]({link})")
+            else:
+                st.write(title)
+            st.caption(f"{item.get('date','')} · {item.get('source','')} · "
+                       f"{item.get('type','')} | {item.get('reason','')}")
+    else:
+        st.info('평가 가능한 주요 이벤트가 확인되지 않았습니다. 이는 호재나 악재가 없다는 확정 판단이 아닙니다.')
+    st.divider()
     st.subheader('최근 뉴스')
-    if news.empty:st.info('뉴스 RSS 조회 결과 없음. 뉴스 점수는 미산출됩니다.')
+    if news.empty:st.info('뉴스 RSS 조회 결과가 없습니다. DART 공시 이벤트는 별도로 평가될 수 있습니다.')
     else:
         for _,item in news.head(16).iterrows():
             link=str(item.get('link',''))
@@ -523,7 +526,7 @@ with t4:
             if link.startswith(('http://','https://')):st.markdown(f'[{title}]({link})')
             else:st.write(title)
             st.caption(f'{source} · {item.get("date","")}')
-        st.caption('뉴스는 제목 키워드로만 자동 평가하므로 문맥·오보·중복 기사·보도의 실제 중요도를 정확히 반영하지 못합니다.')
+        st.caption('기사 제목은 단서일 뿐입니다. 맥락·오보·중복 기사·금액 규모는 평가하지 못하므로 반드시 원문을 확인하세요.')
     st.divider()
     st.subheader('OpenDART 주요 공시')
     if disclosures.empty:st.info('최근 조회 가능한 공시가 없거나 DART 키가 설정되지 않았습니다.')
@@ -572,12 +575,11 @@ with t5:
 
 with t6:
     st.subheader('저장 · 보고서 내보내기')
-    report_text=st.session_state.get('ai_narrative',(None,None))
-    final_text=report_text[1] if report_text[0]==resolved['code'] else explain(scores)
+    final_text=explain(scores)
     source_map={'price':('KIS REST 시세 + '+price_source) if kis_snapshot else (price_source or '연동 없음'),
                 'financial':f'OpenDART {fs_scope}' if not annual.empty else '연동 없음',
                 'flows':'KRX(pykrx)' if not flows.empty else '연동 없음',
-                'news':'Google News RSS' if not news.empty else '연동 없음'}
+                'news':'Google News RSS + OpenDART 공시 이벤트' if not news.empty or not disclosures.empty else '연동 없음'}
     html=render_html(resolved,scores,final_text,kis_snapshot.get('price',price),
                      f'KIS 조회(KST) {datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")} / 일별 종가 {price_date}' if kis_snapshot else price_date,source_map)
     c1,c2,c3=st.columns(3)
@@ -610,4 +612,4 @@ with t6:
             st.error('유효한 HanaV 스냅샷 JSON을 읽지 못했습니다.')
 
 st.divider()
-st.caption('HanaV Stock Analyzer v1.0 | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS · 증권사 리포트: Npay 증권(종목코드 조회)·한경 컨센서스(보조). 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
+st.caption('HanaV Stock Analyzer v1.1 | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS · 증권사 리포트: Npay 증권(종목코드 조회)·한경 컨센서스(보조). 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
