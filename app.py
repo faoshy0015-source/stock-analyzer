@@ -40,7 +40,7 @@ html,body,[class*="css"]{font-family:"Pretendard","Noto Sans KR","Malgun Gothic"
 
 
 def secret(name):
-    try:return str(st.secrets.get(name,'') or '')
+    try:return str(st.secrets.get(name,'') or '').strip()
     except Exception:return ''
 
 @st.cache_data(ttl=21600,show_spinner=False)
@@ -246,7 +246,7 @@ m1.metric('KIS 조회 현재가' if kis_snapshot else '최근 확인 종가',
           fmt(kis_snapshot.get('delta') if kis_snapshot else change,'%',2) if (kis_snapshot.get('delta') if kis_snapshot else change) is not None else None)
 m2.metric('잠정 점수' if scores['partial'] else '종합 점수',fmt(scores['total'],' / 100점',1),help='실제 데이터가 있는 항목의 가중평균. 투자 수익률 예측치가 아닙니다.')
 m3.metric('평가 데이터 충족률',f"{scores['coverage']}%",help='전체 100점 배점 중 점수를 산출한 항목의 배점 합계입니다.')
-m4.metric('종합 의견','데이터 부족 · 판단 보류' if scores['coverage'] < 50 else scores['label'])
+m4.metric('종합 의견','판단 보류' if scores['coverage'] < 50 else scores['label'])
 if scores['partial']:
     st.warning(f"산출 가능한 평가영역 배점이 {scores['coverage']}%로 제한됩니다. 종합 점수는 잠정치이며 모든 항목이 있는 종목과 직접 비교하지 마세요.")
 
