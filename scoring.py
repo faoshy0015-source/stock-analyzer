@@ -183,32 +183,52 @@ def evaluate(prices, annual, quarterly, flow, news, profile):
             'partial':covered<100,'available_count':len(available)}
 
 
+
+def _scope_label(row):
+    """Express rating relative to validated evidence, not full domain."""
+    used=float(row.get('covered_weight') or 0)
+    weight=float(row.get('weight') or 0)
+    score=row.get('score')
+    if score is None or weight<=0:
+        return f"{row.get('category', '영역')} 미산출"
+    if used < weight:
+        return (f"{row['category']}(확인 {used:g}/{weight:g}점 배점 · "
+                f"확인 지표 평균 {score:.1f}점)")
+    return f"{row['category']}({score:.1f}점)"
+
+
 def explain(result):
-    usable=[r for r in result['rows'] if r['score'] is not None]
-    if not usable:return '평가에 필요한 기초 데이터가 부족합니다. 시세 및 재무 데이터 연결 상태를 확인하세요.'
-    # Do not announce an area as a decisive strength from one available
-    # submetric (e.g. excellent debt ratio but no cash-flow/interest evidence).
+    """Conservative executive summary when scores are based on partial evidence."""
+    usable=[r for r in result.get('rows',[]) if r.get('score') is not None]
+    if not usable:
+        return '평가에 필요한 기초 데이터가 부족합니다. 시세 및 재무 데이터 연결 상태를 확인하세요.'
     substantial=[r for r in usable
-                 if r.get('covered_weight',0)>=0.60*r['weight']]
+                 if (r.get('covered_weight') or 0)>=0.60*r['weight']]
     compared=substantial if substantial else usable
-    strong=sorted(compared,key=lambda r:r['score'],reverse=True)
-    weak=sorted(compared,key=lambda r:r['score'])
-    best=strong[0]; risk=weak[0]
-    obs=' '.join(best['notes'][:2]) if best['notes'] else ''
-    neg=' '.join(risk['notes'][:2]) if risk['notes'] else ''
-    msg=(f"산출 가능한 {result['coverage']}점 배점의 항목을 재가중한 종합 평가는 {result['total']:.1f}/100점입니다. "
-         f"상대적으로 강한 분야는 {best['category']}({best['score']:.0f}점)입니다. {obs} "
-         f"주의해서 확인할 분야는 {risk['category']}({risk['score']:.0f}점)입니다. {neg}")
-    if result['partial']:
-        msg+=' 일부 항목은 데이터 미확보로 제외됐으므로 잠정 점수이며 종목 간 단순 비교를 피해야 합니다.'
+    best=max(compared,key=lambda r:r['score'])
+    risk=min(compared,key=lambda r:r['score'])
+    coverage=result.get('coverage',0)
+    total=result.get('total')
+    msg=(f"검증 가능한 {coverage:g}/100점 배점을 재가중한 "
+         f"{'잠정 ' if coverage < 100 else ''}종합 평가: {total:.1f}/100점. "
+         f"상대적으로 점수가 높은 분야는 {_scope_label(best)}이고, "
+         f"확인이 필요한 분야는 {_scope_label(risk)}입니다.")
+    missing=[f"{r['category']} {r['weight']-r.get('covered_weight',0):g}점"
+             for r in result['rows']
+             if r['weight']>r.get('covered_weight',0)]
+    if missing:
+        msg+=' 아직 확인되지 않은 배점: '+', '.join(missing)+'.'
     finance=next((r for r in result['rows'] if r['category']=='재무건전성'),None)
-    if finance and finance.get('covered_weight',0)<finance['weight']:
-        msg+=f" 재무건전성은 {finance.get('covered_weight',0):g}/{finance['weight']}점 배점만 검증된 부분 평가입니다."
+    if finance and 0 < finance.get('covered_weight',0) < finance['weight']:
+        msg+=(' 재무건전성 점수는 확인된 세부 지표만의 평균으로, '
+              '미확인된 재무 위험까지 안전하다고 판정한 것이 아닙니다.')
+    if result.get('partial'):
+        msg+=' 데이터 누락이 있어 다른 종목의 완전한 평가와 직접 비교하지 마세요.'
     return msg
 
 
 def diagnostic_summary(result):
-    """Short investment dashboard summary, never overclaim on partial evidence."""
+    """Short investment dashboard diagnosis with explicit partial scopes."""
     by_category={r['category']:r for r in result.get('rows',[])}
     rules=[
         ('실적·성장성', '실적', (65, 40), ('성장 양호','성장 둔화','혼조')),
@@ -221,8 +241,8 @@ def diagnostic_summary(result):
     for key,label,(strong,weak),(up,down,neutral) in rules:
         r=by_category.get(key) or {}
         score=r.get('score')
-        weight=r.get('weight') or 0
-        used=r.get('covered_weight') or 0
+        weight=float(r.get('weight') or 0)
+        used=float(r.get('covered_weight') or 0)
         if score is None or weight<=0 or used/weight<0.60:
             value='평가자료 제한'
         elif score>=strong:
@@ -231,5 +251,12 @@ def diagnostic_summary(result):
             value=down
         else:
             value=neutral
+        # "안정성 양호" on a partial 15/20 could imply complete
+        # solvency: explicitly distinguish checked metrics from gaps.
+        if value!='평가자료 제한' and used<weight:
+            if key=='재무건전성':
+                value=f"확인 지표 {value} ({used:g}/{weight:g}점 배점)"
+            else:
+                value=f"{value} ({used:g}/{weight:g}점 배점)"
         segments.append(f'{label}: {value}')
     return '  |  '.join(segments)
