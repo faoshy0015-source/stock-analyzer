@@ -63,9 +63,9 @@ def require_login(st):
         [data-testid="stSidebarCollapsedControl"] { display: none !important; }
         [data-testid="stMain"] {
             background:
-              radial-gradient(ellipse at 7% 3%, rgba(20,159,132,.085), transparent 38%),
-              radial-gradient(ellipse at 93% 100%, rgba(63,193,152,.07), transparent 40%),
-              #f8fbfa;
+              radial-gradient(ellipse at 7% 3%, rgba(240,174,98,.13), transparent 38%),
+              radial-gradient(ellipse at 93% 100%, rgba(63,193,152,.08), transparent 40%),
+              #fffaf4;
         }
         .block-container {
             max-width: 1230px !important;
@@ -78,9 +78,11 @@ def require_login(st):
             min-height: 218px;
             border-radius: 22px;
             padding: 27px 31px 30px;
-            background: linear-gradient(122deg, #07483f 0%, #0c806e 56%, #10a28a 100%);
-            box-shadow: 0 18px 40px rgba(5, 88, 75, .18);
-            color: #ffffff;
+            background: linear-gradient(122deg, #e8f6ed 0%, #fff4e1 57%, #ffe5c9 100%);
+            border: 1px solid #eed8bb;
+            border-left: 5px solid #e87d31;
+            box-shadow: 0 15px 35px rgba(120, 87, 45, .10);
+            color: #305949;
         }
         .hanav-auth-hero::before {
             content: "";
@@ -89,10 +91,10 @@ def require_login(st):
             height: 230px;
             right: -65px;
             top: -100px;
-            border: 1px solid rgba(255,255,255,.17);
+            border: 1px solid rgba(230,145,60,.25);
             border-radius: 50%;
-            box-shadow: 0 0 0 42px rgba(255,255,255,.045),
-                        0 0 0 86px rgba(255,255,255,.025);
+            box-shadow: 0 0 0 42px rgba(229,158,79,.065),
+                        0 0 0 86px rgba(26,146,120,.035);
             pointer-events: none;
         }
         .hanav-auth-eyebrow {
@@ -100,7 +102,7 @@ def require_login(st):
             font-size: 10px;
             letter-spacing: 2.1px;
             font-weight: 750;
-            color: #a4f3d8;
+            color: #bd6b25;
             margin-bottom: 19px;
         }
         .hanav-auth-logo {
@@ -110,10 +112,10 @@ def require_login(st):
             display: inline-flex;
             justify-content: center;
             align-items: center;
-            border: 1px solid rgba(255,255,255,.28);
+            border: 1px solid #edce9f;
             border-radius: 13px;
-            background: rgba(255,255,255,.12);
-            color: #fff;
+            background: #fff1dd;
+            color: #a45d24;
             font-size: 20px;
             font-weight: 800;
             letter-spacing: -.8px;
@@ -126,14 +128,14 @@ def require_login(st):
             letter-spacing: -.8px;
             line-height: 1.18;
             margin: 0 0 9px;
-            color: #fff;
+            color: #2d5a48;
         }
         .hanav-auth-subtitle {
             position: relative;
             font-size: .91rem;
             line-height: 1.65;
             margin: 0;
-            color: #d9fff3;
+            color: #4c705e;
             opacity: .96;
         }
         .hanav-auth-panel-title {
@@ -151,10 +153,10 @@ def require_login(st):
         }
         [data-testid="stForm"] {
             background: #fff !important;
-            border: 1px solid #dbe9e4 !important;
+            border: 1px solid #efe1cd !important;
             border-radius: 17px !important;
             padding: 21px 23px 23px !important;
-            box-shadow: 0 10px 32px rgba(16,68,57,.055);
+            box-shadow: 0 10px 32px rgba(119,87,46,.065);
         }
         [data-testid="stForm"] [data-testid="stTextInput"] label {
             font-size: .85rem !important;
@@ -164,32 +166,33 @@ def require_login(st):
         [data-testid="stForm"] input[type="password"],
         [data-testid="stForm"] input[type="text"] {
             border-radius: 10px !important;
-            border: 1px solid #cbded6 !important;
-            background: #fbfefc !important;
+            border: 1px solid #e6d6bd !important;
+            background: #fffefb !important;
             min-height: 45px !important;
         }
         [data-testid="stForm"] input:focus {
-            border-color: #0e987f !important;
-            box-shadow: 0 0 0 3px rgba(17,155,130,.13) !important;
+            border-color: #e8893d !important;
+            box-shadow: 0 0 0 3px rgba(232,125,49,.14) !important;
         }
         [data-testid="stFormSubmitButton"] button {
+            color: #ffffff !important;
             min-height: 46px !important;
             border-radius: 11px !important;
-            background: linear-gradient(100deg, #08765f, #11a084) !important;
-            border: 1px solid #0b876f !important;
+            background: linear-gradient(100deg, #d7752b, #ed9c4e) !important;
+            border: 1px solid #d7752b !important;
             color: #fff !important;
             font-weight: 750 !important;
-            box-shadow: 0 7px 17px rgba(13,132,109,.18);
+            box-shadow: 0 7px 17px rgba(212,114,42,.15);
         }
         [data-testid="stFormSubmitButton"] button:hover {
-            background: linear-gradient(100deg, #096851, #0c8d73) !important;
-            border-color: #096851 !important;
+            background: linear-gradient(100deg, #c76a25, #df8737) !important;
+            border-color: #bb6425 !important;
             color: #fff !important;
         }
         .hanav-auth-footer {
             text-align: center;
             margin-top: 22px;
-            color: #81958e;
+            color: #98734f;
             font-size: 11px;
             letter-spacing: .45px;
         }
