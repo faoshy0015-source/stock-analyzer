@@ -10,7 +10,7 @@ import streamlit as st
 
 from data_sources import (SEED, seed_listing, get_listing, get_corp_codes,
                           find_instrument, clean_code, get_prices, get_profile,
-                          get_investor_flows, dart_disclosures, dart_financials, get_news,
+                          get_investor_flows, dart_disclosures, dart_financials, dart_full_fy_metrics, get_news,
                           get_corp_codes_diagnostic, diagnose_dart, DART_KNOWN_CORP_CODES,
                           get_kis_access_token, get_kis_quote)
 from scoring import evaluate, explain, pct_change, number
@@ -75,6 +75,9 @@ def cached_flow(code):return get_investor_flows(code)
 
 @st.cache_data(ttl=10800,show_spinner=False)
 def cached_fin(key,corp):return dart_financials(key,corp)
+
+@st.cache_data(ttl=10800,show_spinner=False)
+def cached_full_fy(key,corp,year,scope):return dart_full_fy_metrics(key,corp,year,scope)
 
 @st.cache_data(ttl=1800,show_spinner=False)
 def cached_news(name):return get_news(name)
@@ -225,6 +228,12 @@ with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False)
         disclosures=cached_disclosures(api_key,corp_code)
     else:
         annual,quarterly,fs_scope,disclosures=pd.DataFrame(),pd.DataFrame(),'',pd.DataFrame()
+    financial_detail={}
+    if api_key and corp_code and not annual.empty and fs_scope in ('CFS','OFS'):
+        st.write('DART 현금흐름·이자비용·유동비율 근거 조회')
+        fy_year=str(annual.sort_values('period').iloc[-1]['period'])
+        financial_detail=cached_full_fy(api_key,corp_code,fy_year,fs_scope)
+    profile['__financial_context']=financial_detail
     incomplete=bool(prices.empty or (api_key and annual.empty) or flows.empty)
     krx_cap={};krx_valuation_error=''
     if krx_key and (not positive(profile.get('trailingPE')) or
