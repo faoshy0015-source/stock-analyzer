@@ -66,12 +66,37 @@ st.info(
 )
 
 env = server_env()
+has_supabase = bool(env.get("SUPABASE_URL") and env.get("SUPABASE_SERVICE_ROLE_KEY"))
+if not has_supabase:
+    st.caption(
+        "Supabase 결과 저장: 미설정(선택 기능). 수급 데이터 검색 자체와는 별개이며, "
+        "DB를 연결하지 않아도 수동 검색 결과는 화면에서 확인할 수 있습니다."
+    )
+else:
+    st.caption("Supabase 결과 저장: 연결정보 등록됨 · 테이블 존재 여부는 별도 확인 필요")
+
+with st.expander("연결 설정 확인 · KRX / Supabase", expanded=not KRX_LOGIN_READY):
+    st.write("KRX 회원 로그인 정보: " + ("등록됨 (실제 조회는 별도 확인)" if KRX_LOGIN_READY else "미등록"))
+    st.write("Supabase URL/관리자 키: " + ("등록됨 (테이블은 확인 필요)" if has_supabase else "미등록"))
+    st.markdown(
+        "**Supabase 404 해결:** 연결된 Supabase 프로젝트의 SQL Editor에서 "
+        "[flow_scan_runs 테이블 생성 SQL](https://github.com/faoshy0015-source/stock-analyzer/blob/main/sql/flow_scan_runs.sql)"
+        "을 한 번 실행한 후 새로고침하세요. 다른 프로젝트에 실행하지 않도록 URL을 확인하세요."
+    )
+    st.caption(
+        "KRX_ID/KRX_PW는 KRX 회원 계정 로그인용, "
+        "SUPABASE_SERVICE_ROLE_KEY는 비공개 결과 저장용으로 역할이 다릅니다. "
+        "키 값이나 비밀번호를 채팅·화면·GitHub 코드에 공유하지 마세요."
+    )
 report = st.session_state.get("marketwide_report")
 if report is None:
     try:
         report = latest_saved()
     except RuntimeError as exc:
         st.warning(str(exc))
+        if "HTTP 404" in str(exc):
+            st.caption("위 오류는 자동 검색에 사용하는 KRX 연결 오류와 별개입니다. "
+                       "Supabase 저장만 준비되지 않은 경우에도 수동 검색은 가능합니다.")
 if report is None:
     st.caption(
         "아직 저장된 전종목 검색 결과가 없습니다. 아래에서 직접 검색하거나, "
@@ -110,14 +135,22 @@ with st.expander("검색 조건 및 수동 실행", expanded=report is None):
         "당일 개인 순매도 및 외국인+기관 합계 순매수(주식 수량과 금액 모두 양수). "
         "직전 거래일 연속 흐름을 바탕으로 신규 전환과 연속 전환을 구분합니다."
     )
+    if not KRX_LOGIN_READY:
+        st.error(
+            "KRX 로그인 정보가 없어 전종목 검색을 시작할 수 없습니다. "
+            "Streamlit Cloud → App settings → Secrets에 KRX_ID와 KRX_PW를 등록하세요. "
+            "Supabase 설정과는 별도입니다."
+        )
     if st.button("🔎 KOSPI·KOSDAQ 전종목 즉시 검색", type="primary",
-                 use_container_width=True, disabled=not bool(markets)):
+                 use_container_width=True,
+                 disabled=not bool(markets) or not KRX_LOGIN_READY):
         p = st.progress(0, text="시장 자료 확인 시작")
         def _progress(done, total, label):
             p.progress(done / total, text=f"KRX 전 종목 확인 {done}/{total} · {label}")
 
         with st.status("KRX 전시장 과거 수급 및 가격 검증", expanded=True) as status:
             try:
+                st.session_state.pop("marketwide_last_error", None)
                 report = run_full_scan(
                     str(selected_day), markets=tuple(markets), lookback=lookback,
                     min_coverage=0.98, min_sell_multiple=sell_multiple,
@@ -138,13 +171,26 @@ with st.expander("검색 조건 및 수동 실행", expanded=report is None):
                     "수급자료 기준일 검증 완료 · 데이터 커버리지 "
                     + f"{report['coverage']['min_investor_coverage']:.1%}")
             except ScanDataError as exc:
-                status.update(label="전종목 검증 중단", state="error")
-                st.error("불완전한 데이터로 잘못된 신호를 만들지 않았습니다: " + str(exc))
+                status.update(label="전종목 검증 중단", state="error", expanded=True)
+                st.session_state["marketwide_last_error"] = (
+                    "KRX 데이터 검증 실패: " + str(exc)
+                )
             except Exception as exc:
-                status.update(label="데이터 연결 오류", state="error")
-                st.error("조회 실패: " + type(exc).__name__)
+                status.update(label="데이터 연결 오류", state="error", expanded=True)
+                st.session_state["marketwide_last_error"] = (
+                    "KRX 데이터 처리 오류: " + type(exc).__name__
+                    + " · 원천 데이터 연결 및 서버 로그를 확인하세요."
+                )
             finally:
                 p.empty()
+    last_error = st.session_state.get("marketwide_last_error")
+    if last_error:
+        st.error(last_error)
+        st.caption(
+            "KRX 로그인 정보가 등록되어 있어도 인증 실패, KRX 서버 제한 또는 "
+            "과거 투자자별 수급 자료 누락으로 중단될 수 있습니다. "
+            "전종목 수급 결과를 임의로 0건으로 만들지 않습니다."
+        )
 
 if report:
     st.divider()
