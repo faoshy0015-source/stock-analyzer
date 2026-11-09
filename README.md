@@ -272,3 +272,73 @@ Streamlit 왼쪽 페이지 메뉴의 **수급 전환 검색**을 선택하면, �
 - 검색 결과에서 종목을 선택하고 **Stock Analyzer에서 상세 분석**을 누르면 기존 분석으로 이동합니다.
 
 테스트: `python -m pytest -q tests/test_flow_reversal.py`.
+
+## 📡 KOSPI·KOSDAQ 전종목 수급 전환 레이더 · 마감 자동 검색
+
+`pages/0_전종목_수급_레이더.py`를 추가했습니다. 기존의 `pages/1_수급_전환_검색.py`는
+**상위 후보를 빠르게 보는 보조 검색**으로 유지됩니다.
+
+### 검색 방식
+
+1. 한국거래소 KOSPI 지수의 **실제 거래일**을 조회하여 정확히 직전 10/20거래일을 확정합니다.
+2. 해당 기간의 코스피·코스닥 **시장별 일일 전체종목 시세**와 개인/외국인/기관 투자자별 순매수
+   수량·대금표를 KRX 기반 pykrx로 일괄 수집합니다.
+3. 일별 거래 종목 수 대비 각 투자자별 표의 종목 커버리지를 검사합니다.
+   **98% 미만이거나 데이터가 누락되면 전종목 검색을 중단**합니다.
+   KRX 순위형 서비스가 제한된 목록만 반환하는 경우에도 결과 0건으로 오인하지 않습니다.
+4. 이전 10거래일 중 개인 순매수 6일 이상 + 개인 순매수 수량 누적 양수,
+   당일 개인 대량 순매도 + 외국인/기관 합계 순매수 수량·대금 양수,
+   개인 순매도 규모 평소대비 2배·거래량의 5% 이상·거래대금 50억원 이상 조건을 평가합니다.
+5. 역방향 수급 상태가 기준일 처음 시작되었으면 **신규 전환**,
+   당일과 이전 거래일에도 이어졌다면 **연속 수급 전환**으로 구분합니다.
+   기존 Stock Analyzer 상세 분석으로 이동할 수 있습니다.
+
+*유의:* 98% 커버리지는 데이터 품질 기준이며 **100% 전종목 수급 완전성 보장**이 아닙니다.
+상위 순위 일부만 제공되는 데이터 원천은 사용하지 않고 중단합니다.
+기관+외국인 순매수는 개인 순매도의 **상대방 직접 체결 증거가 아니며** 상승 신호도 아닙니다.
+실제 KRX 서버 접속·외부 데이터 이용 권한과 증권사 내부 데이터 이용 정책을 별도로 확인하세요.
+
+### 장마감 자동 실행과 알림
+
+- GitHub Actions: `.github/workflows/daily-flow-scan.yml`.
+- 평일 **20:10 한국시간(KST)** 예약 실행(일부 일정 지연 가능); 휴장일·데이터 미확정·KRX 응답
+  부족이면 알림을 발생시키지 않습니다. 수동 실행은 GitHub Actions의
+  **Daily Stock Flow Reversal Scan → Run workflow**에서 날짜를 지정할 수 있습니다.
+- KRX 데이터 품질이 확인되었고 **신규 전환 종목이 있을 때만** Telegram 알림을 보냅니다.
+  이전과 같은 날짜의 이중 알림은 Supabase DB가 설정된 경우 `alert_sent`로 방지합니다.
+- 기본 설정만으로는 *자동 검색 워크플로는 동작하지만 알림/결과 저장은 활성화되지 않습니다.*
+  사용자별 Telegram 또는 Supabase 인증정보는 **서버 비밀 설정을 직접 등록해야** 합니다.
+
+**옵션 A: Telegram 알림만 사용**
+
+1. Telegram에서 본인이 관리하는 Bot을 만들고 채팅 ID를 확인합니다.
+2. GitHub 저장소 → Settings → Secrets and variables → Actions → New repository secret:
+   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`를 추가합니다.
+3. 예약 실행 완료 후 새로운 전환 종목이 있을 때 알림이 전송됩니다.
+   DB가 없다면 동일 날짜의 수동 재실행 중복알림 차단은 보장되지 않습니다.
+
+**옵션 B: Supabase 저장 + 앱에서 자동검색 결과 열람**
+
+1. **본인 Supabase 프로젝트** SQL Editor에서 `sql/flow_scan_runs.sql`을 실행합니다.
+2. GitHub Actions의 Repository secrets에 `SUPABASE_URL`,
+   `SUPABASE_SERVICE_ROLE_KEY`를 추가합니다.
+3. Stock Analyzer의 Streamlit Cloud App settings → Secrets에도 같은 두 키를
+   **서버 비밀**로 등록합니다.
+4. Actions 실행 결과가 `public.flow_scan_runs`에 비공개 저장되며,
+   앱의 수급 레이더 페이지에서 가장 최근 성공한 분석 결과를 확인할 수 있습니다.
+5. 저장된 알림 발송 기록을 이용해 당일 동일 신호의 재발송을 방지합니다.
+   `service_role` 키는 관리자 수준 비밀이므로 GitHub 코드/README/웹페이지에
+   **절대 게시하지 마세요.** Supabase API 익명 키와 혼동하지 마세요.
+
+**검증 및 수동 실행**
+
+```bash
+python -m pytest -q tests/test_flow_reversal.py tests/test_full_flow_scan.py tests/test_flow_scan_delivery.py
+python scripts/run_flow_scan.py --date 2026-11-09
+```
+
+두 번째 명령은 **실제 외부 KRX 수급 응답**이 있어야 동작합니다.
+CI의 합성 데이터 단위테스트 통과는 KRX 실운영 접속 성공과 다릅니다.
+실제 데이터 제공처가 순위 일부만 돌려주거나 KRX 접근을 제한하면
+최종 검색 및 알림이 실패할 수 있습니다. 이 경우 데이터 이용 권한을
+확인하거나 정식 전종목 투자자 수급 피드로 데이터 어댑터를 교체해야 합니다.
