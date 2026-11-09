@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from full_flow_scan import ScanDataError, run_full_scan
+from krx_auth import krx_login_configured
 from flow_scan_delivery import (
     alert_text, already_notified, persist_scan, send_telegram,
 )
@@ -52,6 +53,18 @@ def main():
     asof = args.date.strip() or today.isoformat()
     if str(asof) > today.isoformat():
         parser.error("future date is not allowed")
+    if not krx_login_configured():
+        message = (
+            "KRX 데이터 로그인 인증정보 미설정 (KRX_ID/KRX_PW). "
+            "검색·알림을 실행하지 않았습니다. GitHub Actions Secrets에 등록하세요."
+        )
+        print("::warning::" + message)
+        if os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+                out.write("## 전시장 검색 보류\\n\\n" + message + "\\n")
+        # Scheduled runs are harmlessly skipped until credential setup;
+        # explicit manual test runs fail visibly instead of claiming success.
+        return 0 if os.environ.get("GITHUB_EVENT_NAME") == "schedule" else 3
 
     def progress(done, total, label):
         if done == 1 or done == total or done % 8 == 0:
