@@ -1,0 +1,24 @@
+name: One-time KRX Live Coverage Smoke
+
+on:
+  push:
+    branches: [feature/investor-flow-reversal-screener]
+    paths:
+      - .github/workflows/krx-live-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  krx-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install "pandas>=2.2,<3" "numpy>=1.26,<3" "requests>=2.31,<3" "pykrx>=1.0.48"
+      - name: Verify KRX market coverage for past settled day (no alerts)
+        run: python scripts/run_flow_scan.py --date 2026-11-09 --markets KOSPI
