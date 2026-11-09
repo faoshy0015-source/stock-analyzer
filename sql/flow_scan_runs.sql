@@ -19,3 +19,6 @@ grant select, insert, update on table public.flow_scan_runs to service_role;
 
 comment on table public.flow_scan_runs is
   'Derived EOD KRX stock-investor-flow screening results. Service-role server access only.';
+
+-- Tell PostgREST to pick up the new or existing table after this migration.
+notify pgrst, 'reload schema';
