@@ -30,6 +30,8 @@ jobs:
     timeout-minutes: 55
     env:
       PYTHONUNBUFFERED: "1"
+      KRX_ID: ${{ secrets.KRX_ID }}
+      KRX_PW: ${{ secrets.KRX_PW }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
