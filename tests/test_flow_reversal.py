@@ -93,3 +93,12 @@ def test_rejects_mixed_cash_share_direction():
 def test_no_future_date_from_latest_data():
     shares, amounts, prices, day = sample()
     assert assess_reversal(shares, amounts, prices, day + pd.Timedelta(days=1)) is None
+
+
+def test_incomplete_middle_session_not_replaced_with_older_session():
+    shares, amounts, prices, day = sample(12)
+    missing = prices.index[-3]
+    amounts = amounts.drop(index=missing)
+    # There are still ten old joined reports, but the actual preceding
+    # ten trading sessions include the missing date.
+    assert assess_reversal(shares, amounts, prices, day) is None
