@@ -154,7 +154,7 @@ def test_full_scan_uses_marketwide_batch_calls_and_returns_data():
     assert result["totals"]["scanned_tickers"] == 3
     assert result["totals"]["new_signals"] == 3
     assert result["coverage"]["min_investor_coverage"] == 1
-    assert len(mock.calls) == 24 * 4
+    assert len(mock.calls) == 22 * 4  # 22 exact KRX sessions × 4 batch endpoints
 
 
 def test_no_holiday_fake_trading_date_passes():
