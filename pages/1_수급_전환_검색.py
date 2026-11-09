@@ -114,7 +114,11 @@ if st.button("🔎 수급 전환 검색 실행", type="primary", use_container_w
                                      "market": item["market"], **result})
                 except Exception:
                     failed += 1
-                progress.progress(i / count, text=f"후보 {i}/{count}종목 확인") if count else None
+                # Assignment prevents Streamlit's magic renderer from printing
+                # the DeltaGenerator returned by a conditional expression.
+                _progress_update = progress.progress(
+                    i / count, text=f"후보 {i}/{count}종목 확인"
+                )
             progress.empty()
             st.session_state["reversal_run"] = {
                 "rows": sorted(rows, key=lambda x: (
