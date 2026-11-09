@@ -27,8 +27,11 @@ def _supabase_credentials(env=None):
 
 
 def _headers(key):
+    # Explicitly select the public schema even when the Supabase project
+    # exposes multiple schemas in a different default order.
     return {"apikey": key, "Authorization": "Bearer " + key,
-            "Content-Type": "application/json"}
+            "Content-Type": "application/json",
+            "Accept-Profile": "public", "Content-Profile": "public"}
 
 
 def _supabase_error(response, action):
@@ -51,9 +54,10 @@ def _supabase_error(response, action):
         )
         if code in ("PGRST205", "42P01"):
             hint = (
-                "public.flow_scan_runs 테이블이 API 스키마에서 확인되지 않습니다. "
+                "public.flow_scan_runs 테이블이 API 스키마 캐시에 없습니다. "
                 "해당 Supabase 프로젝트의 SQL Editor에서 "
-                "sql/flow_scan_runs.sql을 실행하세요."
+                "sql/flow_scan_runs.sql을 실행하고, 이미 테이블이 있다면 "
+                "NOTIFY pgrst, 'reload schema'; 로 캐시를 갱신하세요."
             )
         return RuntimeError(f"Supabase {action} 실패 (HTTP 404): {hint}")
     if status in (401, 403):
