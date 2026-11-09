@@ -1,0 +1,61 @@
+name: Daily Stock Flow Reversal Scan
+
+on:
+  schedule:
+    # 20:10 Korea time, Monday through Friday (11:10 UTC).
+    - cron: "10 11 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      asof:
+        description: "KRX 거래일 (YYYY-MM-DD), 비우면 오늘 한국시간"
+        required: false
+        default: ""
+        type: string
+      notify:
+        description: "알림 발송 (수동 실행 기본 비활성)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stock-flow-reversal-scan
+  cancel-in-progress: false
+
+jobs:
+  daily-market-screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      PYTHONUNBUFFERED: "1"
+      KRX_ID: ${{ secrets.KRX_ID }}
+      KRX_PW: ${{ secrets.KRX_PW }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TARGET_DATE: ${{ github.event.inputs.asof || '' }}
+      SHOULD_NOTIFY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.notify }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install scan dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pandas>=2.2,<3" "numpy>=1.26,<3" "requests>=2.31,<3" "pykrx>=1.0.48"
+      - name: Full market close scan (KRX coverage verification)
+        shell: bash
+        run: |
+          args=()
+          if [[ -n "$TARGET_DATE" ]]; then
+            args+=(--date "$TARGET_DATE")
+          fi
+          if [[ "$SHOULD_NOTIFY" == "true" ]]; then
+            args+=(--notify)
+          fi
+          python scripts/run_flow_scan.py "${args[@]}"
