@@ -59,6 +59,8 @@ def test_supabase_key_only_in_headers_not_querystring(monkeypatch):
         })
     assert "private-token" not in calls[0][0]
     assert calls[0][1]["headers"]["apikey"] == "private-token"
+    assert calls[0][1]["headers"]["Accept-Profile"] == "public"
+    assert calls[0][1]["headers"]["Content-Profile"] == "public"
     assert calls[0][1]["json"]["run_date"] == "2026-11-09"
 
 
