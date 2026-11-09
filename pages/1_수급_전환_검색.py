@@ -15,6 +15,9 @@ st.set_page_config(page_title="수급 전환 검색 · Stock Analyzer", page_ico
                    layout="wide")
 require_login(st)
 
+from krx_auth import configure_streamlit_krx
+KRX_LOGIN_READY = configure_streamlit_krx(st)
+
 
 @st.cache_data(ttl=7200, show_spinner=False)
 def cached_candidates(day, markets, each_investor):
@@ -37,6 +40,8 @@ def default_session_date():
 
 
 st.title("🔄 수급 전환 종목 검색")
+if not KRX_LOGIN_READY:
+    st.warning("KRX 회원 로그인 미설정: Streamlit Secrets에 KRX_ID / KRX_PW가 필요합니다.")
 st.caption("Stock Analyzer · 개인 매수 우세 → 개인 대량 순매도 + 외국인·기관 순매수 전환")
 st.info(
     "이 검색은 **KRX 외국인·기관 순매수 순위에 잡힌 후보군만** 심층 분석합니다. "
