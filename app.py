@@ -162,6 +162,9 @@ def secret(name):
 # Password is read only from Streamlit Secrets, never from GitHub files.
 require_login(st)
 
+from krx_auth import configure_streamlit_krx
+KRX_LOGIN_READY = configure_streamlit_krx(st)
+
 
 @st.cache_data(ttl=21600,show_spinner=False)
 def cached_kis_token(appkey,secret):return get_kis_access_token(appkey,secret)
