@@ -14,9 +14,9 @@ def configure_streamlit_krx(st):
         krx_id = str(st.secrets.get("KRX_ID", "") or "").strip()
         krx_pw = str(st.secrets.get("KRX_PW", "") or "").strip()
     except Exception:
-        return False
+        return krx_login_configured()
     if not (krx_id and krx_pw):
-        return False
+        return krx_login_configured()
     os.environ["KRX_ID"] = krx_id
     os.environ["KRX_PW"] = krx_pw
     return True
