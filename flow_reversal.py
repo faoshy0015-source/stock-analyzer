@@ -59,15 +59,18 @@ def assess_reversal(
     if target not in qty.index or target not in money.index or target not in px.index:
         return None
 
-    # Joining on calendar date is critical; never compare a stale investor
-    # report against today's price/volume.
+    # The official price series determines the actual last N market sessions.
+    # If any investor report is missing in that exact window, reject it rather
+    # than silently substituting an older session.
+    recent_sessions = px.loc[px.index <= target].tail(lookback + 1)
+    if len(recent_sessions) != lookback + 1 or recent_sessions.index[-1] != target:
+        return None
     joined = qty.rename(columns={c: c + "_qty" for c in PARTICIPANTS})
     joined = joined.join(money.rename(columns={c: c + "_krw" for c in PARTICIPANTS}),
                          how="inner").join(px, how="inner")
-    joined = joined.loc[joined.index <= target]
-    history = joined.loc[joined.index < target].tail(lookback)
-    if len(history) != lookback:
+    if not recent_sessions.index.isin(joined.index).all():
         return None
+    history = joined.loc[recent_sessions.index[:-1]]
     today = joined.loc[target]
     if isinstance(today, pd.DataFrame):
         return None
