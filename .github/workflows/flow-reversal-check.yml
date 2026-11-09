@@ -28,6 +28,7 @@ on:
       - tests/test_full_flow_scan.py
       - tests/test_flow_scan_delivery.py
       - tests/test_krx_auth.py
+      - tests/test_candidate_screener_ui.py
       - .github/workflows/flow-reversal-check.yml
 
 jobs:
