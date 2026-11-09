@@ -17,6 +17,9 @@ st.set_page_config(page_title="전종목 수급 레이더 · Stock Analyzer", pa
                    layout="wide")
 require_login(st)
 
+from krx_auth import configure_streamlit_krx
+KRX_LOGIN_READY = configure_streamlit_krx(st)
+
 
 def server_env():
     """Read only explicitly expected secrets; never render values to the client."""
@@ -50,6 +53,12 @@ def stock_history(code, day):
 
 st.title("📡 전종목 수급 전환 레이더")
 st.caption("KOSPI · KOSDAQ | 개인 순매수 지속 → 개인 이례적 순매도 + 외국인·기관 합산 순매수")
+if not KRX_LOGIN_READY:
+    st.warning(
+        "KRX 회원 로그인 설정이 없습니다. 전종목 실제 조회는 인증정보 등록 전까지 실행할 수 없습니다. "
+        "Streamlit Cloud Secrets에 KRX_ID / KRX_PW를 등록하세요."
+    )
+
 st.info(
     "KRX 거래일별 전 종목 수급표와 가격 자료를 교차 검증합니다. "
     "KRX가 순위 상위종목만 돌려주거나 자료가 누락되면 **검색 결과 0건이 아니라 실패**로 표시합니다. "
