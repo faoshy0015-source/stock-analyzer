@@ -2,12 +2,27 @@ name: Validate Investor Flow Reversal
 
 on:
   push:
-    branches: [feature/investor-flow-reversal-screener]
+    branches: [feature/investor-flow-reversal-screener, main]
+    paths:
+      - flow_reversal.py
+      - full_flow_scan.py
+      - flow_scan_delivery.py
+      - scripts/run_flow_scan.py
+      - pages/**
+      - tests/test_flow_reversal.py
+      - tests/test_full_flow_scan.py
+      - tests/test_flow_scan_delivery.py
+      - .github/workflows/flow-reversal-check.yml
   pull_request:
     paths:
       - flow_reversal.py
-      - pages/1_수급_전환_검색.py
+      - full_flow_scan.py
+      - flow_scan_delivery.py
+      - scripts/run_flow_scan.py
+      - pages/**
       - tests/test_flow_reversal.py
+      - tests/test_full_flow_scan.py
+      - tests/test_flow_scan_delivery.py
       - .github/workflows/flow-reversal-check.yml
 
 jobs:
@@ -21,8 +36,8 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install test dependencies
-        run: python -m pip install pandas pytest
+        run: python -m pip install pandas requests pytest
       - name: Compile new modules
-        run: python -m compileall -q flow_reversal.py pages tests/test_flow_reversal.py
-      - name: Test reversal screening
-        run: python -m pytest -q tests/test_flow_reversal.py
+        run: python -m compileall -q flow_reversal.py full_flow_scan.py flow_scan_delivery.py pages scripts tests/test_flow_reversal.py tests/test_full_flow_scan.py
+      - name: Test market-wide and candidate reversal scanner
+        run: python -m pytest -q tests/test_flow_reversal.py tests/test_full_flow_scan.py tests/test_flow_scan_delivery.py
