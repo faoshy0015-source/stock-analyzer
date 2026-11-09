@@ -14,6 +14,7 @@ on:
       - tests/test_full_flow_scan.py
       - tests/test_flow_scan_delivery.py
       - tests/test_krx_auth.py
+      - tests/test_candidate_screener_ui.py
       - .github/workflows/flow-reversal-check.yml
   pull_request:
     paths:
@@ -27,6 +28,7 @@ on:
       - tests/test_full_flow_scan.py
       - tests/test_flow_scan_delivery.py
       - tests/test_krx_auth.py
+      - tests/test_candidate_screener_ui.py
       - .github/workflows/flow-reversal-check.yml
 
 jobs:
@@ -42,6 +44,6 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install pandas requests pytest
       - name: Compile new modules
-        run: python -m compileall -q flow_reversal.py full_flow_scan.py flow_scan_delivery.py krx_auth.py pages scripts tests/test_flow_reversal.py tests/test_full_flow_scan.py tests/test_flow_scan_delivery.py tests/test_krx_auth.py
+        run: python -m compileall -q flow_reversal.py full_flow_scan.py flow_scan_delivery.py krx_auth.py pages scripts tests/test_flow_reversal.py tests/test_full_flow_scan.py tests/test_flow_scan_delivery.py tests/test_krx_auth.py tests/test_candidate_screener_ui.py
       - name: Test market-wide and candidate reversal scanner
-        run: python -m pytest -q tests/test_flow_reversal.py tests/test_full_flow_scan.py tests/test_flow_scan_delivery.py tests/test_krx_auth.py
+        run: python -m pytest -q tests/test_flow_reversal.py tests/test_full_flow_scan.py tests/test_flow_scan_delivery.py tests/test_krx_auth.py tests/test_candidate_screener_ui.py
