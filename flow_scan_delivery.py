@@ -27,8 +27,49 @@ def _supabase_credentials(env=None):
 
 
 def _headers(key):
+    # Explicitly select the public schema even when the Supabase project
+    # exposes multiple schemas in a different default order.
     return {"apikey": key, "Authorization": "Bearer " + key,
-            "Content-Type": "application/json"}
+            "Content-Type": "application/json",
+            "Accept-Profile": "public", "Content-Profile": "public"}
+
+
+def _supabase_error(response, action):
+    """Classify common PostgREST setup errors without exposing credentials."""
+    status = response.status_code
+    code = ""
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            code = str(payload.get("code", "") or "")
+    except (ValueError, TypeError):
+        pass
+    if status == 404:
+        # PGRST205: table is absent from the PostgREST schema cache.
+        # A generic 404 can also indicate a wrong project URL.
+        hint = (
+            "public.flow_scan_runs 테이블이 없거나 Supabase 프로젝트 주소가 다릅니다. "
+            "해당 프로젝트의 SQL Editor에서 sql/flow_scan_runs.sql을 실행하고 "
+            "프로젝트 URL을 확인하세요."
+        )
+        if code in ("PGRST205", "42P01"):
+            hint = (
+                "public.flow_scan_runs 테이블이 API 스키마 캐시에 없습니다. "
+                "해당 Supabase 프로젝트의 SQL Editor에서 "
+                "sql/flow_scan_runs.sql을 실행하고, 이미 테이블이 있다면 "
+                "NOTIFY pgrst, 'reload schema'; 로 캐시를 갱신하세요."
+            )
+        return RuntimeError(f"Supabase {action} 실패 (HTTP 404): {hint}")
+    if status in (401, 403):
+        return RuntimeError(
+            f"Supabase {action} 실패 (HTTP {status}): "
+            "SUPABASE_SERVICE_ROLE_KEY와 프로젝트 URL의 짝, "
+            "테이블 접근 권한을 확인하세요. 키는 화면에 붙여넣지 마세요."
+        )
+    return RuntimeError(
+        f"Supabase {action} 실패 (HTTP {status}): "
+        "DB 테이블·연결 상태·서버 로그를 확인하세요."
+    )
 
 
 def read_latest_scan(env=None):
@@ -41,8 +82,7 @@ def read_latest_scan(env=None):
                                     "limit": "1"},
                             headers=_headers(key), timeout=15)
     if not response.ok:
-        raise RuntimeError("Supabase 최신 스캔 조회 실패 (HTTP " +
-                           str(response.status_code) + ")")
+        raise _supabase_error(response, "최신 스캔 조회")
     records = response.json()
     return records[0]["data"] if records else None
 
@@ -57,8 +97,7 @@ def already_notified(day, env=None):
         params={"select": "alert_sent", "run_date": "eq." + str(day), "limit": "1"},
         headers=_headers(key), timeout=15)
     if not response.ok:
-        raise RuntimeError("Supabase 알림 중복 확인 실패 (HTTP " +
-                           str(response.status_code) + ")")
+        raise _supabase_error(response, "알림 중복 확인")
     rows = response.json()
     return bool(rows and rows[0]["alert_sent"])
 
@@ -80,8 +119,7 @@ def persist_scan(report, alert_sent=False, env=None):
                  "Prefer": "resolution=merge-duplicates,return=minimal"},
         timeout=25)
     if not response.ok:
-        raise RuntimeError("Supabase 스캔 저장 실패 (HTTP " +
-                           str(response.status_code) + ")")
+        raise _supabase_error(response, "스캔 저장")
     return True
 
 

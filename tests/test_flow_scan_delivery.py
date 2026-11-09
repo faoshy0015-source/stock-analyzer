@@ -59,6 +59,8 @@ def test_supabase_key_only_in_headers_not_querystring(monkeypatch):
         })
     assert "private-token" not in calls[0][0]
     assert calls[0][1]["headers"]["apikey"] == "private-token"
+    assert calls[0][1]["headers"]["Accept-Profile"] == "public"
+    assert calls[0][1]["headers"]["Content-Profile"] == "public"
     assert calls[0][1]["json"]["run_date"] == "2026-11-09"
 
 
@@ -84,3 +86,53 @@ def test_telegram_failure_is_sanitized(monkeypatch):
         delivery.send_telegram(
             "hello", env={"TELEGRAM_BOT_TOKEN": "superprivate",
                            "TELEGRAM_CHAT_ID": "123"})
+
+
+def test_missing_table_404_gives_sql_setup_hint(monkeypatch):
+    def fake_get(url, **kwargs):
+        return Mock(
+            ok=False, status_code=404,
+            json=lambda: {"code": "PGRST205",
+                          "message": "Could not find the table in schema cache"})
+    monkeypatch.setattr(delivery.requests, "get", fake_get)
+    with pytest.raises(RuntimeError, match="flow_scan_runs.sql"):
+        delivery.read_latest_scan(
+            env={"SUPABASE_URL": "https://example.supabase.co",
+                 "SUPABASE_SERVICE_ROLE_KEY": "private-token"})
+
+
+def test_wrong_project_404_does_not_claim_specific_table_missing(monkeypatch):
+    def fake_get(url, **kwargs):
+        return Mock(ok=False, status_code=404, json=lambda: {})
+    monkeypatch.setattr(delivery.requests, "get", fake_get)
+    with pytest.raises(RuntimeError, match="프로젝트 주소"):
+        delivery.read_latest_scan(
+            env={"SUPABASE_URL": "https://example.supabase.co",
+                 "SUPABASE_SERVICE_ROLE_KEY": "private-token"})
+
+
+def test_auth_error_does_not_reveal_secret(monkeypatch):
+    def fake_get(url, **kwargs):
+        return Mock(ok=False, status_code=401,
+                    json=lambda: {"code": "PGRST301"})
+    monkeypatch.setattr(delivery.requests, "get", fake_get)
+    with pytest.raises(RuntimeError) as context:
+        delivery.read_latest_scan(
+            env={"SUPABASE_URL": "https://example.supabase.co",
+                 "SUPABASE_SERVICE_ROLE_KEY": "private-token"})
+    assert "private-token" not in str(context.value)
+    assert "SUPABASE_SERVICE_ROLE_KEY" in str(context.value)
+
+
+def test_no_table_does_not_make_krx_scan_fail_when_storage_optional(monkeypatch):
+    # The storage adapter reports a precise error; the app catches it
+    # independently after the core KRX scanner already returned a report.
+    def fake_post(url, **kwargs):
+        return Mock(ok=False, status_code=404,
+                    json=lambda: {"code": "PGRST205"})
+    monkeypatch.setattr(delivery.requests, "post", fake_post)
+    with pytest.raises(RuntimeError, match="flow_scan_runs.sql"):
+        delivery.persist_scan(
+            example_report(),
+            env={"SUPABASE_URL": "https://example.supabase.co",
+                 "SUPABASE_SERVICE_ROLE_KEY": "private-token"})
