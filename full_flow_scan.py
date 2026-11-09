@@ -105,8 +105,14 @@ def discover_sessions(stock, end_day, history_sessions=25):
     """Use actual KRX KOSPI index trading-session timestamps, not weekdays."""
     end = pd.Timestamp(end_day).normalize()
     start = end - pd.Timedelta(days=max(65, history_sessions * 2 + 15))
-    index = stock.get_index_ohlcv_by_date(
-        start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), "1001")
+    try:
+        index = stock.get_index_ohlcv_by_date(
+            start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), "1001")
+    except Exception as exc:
+        raise ScanDataError(
+            "KRX 거래일 조회 실패 (" + type(exc).__name__ + "): "
+            "회원 로그인 상태 또는 데이터 제공처 연결을 확인하세요"
+        ) from exc
     if index is None or index.empty:
         raise ScanDataError("KRX 코스피 지수 거래일 캘린더 조회 실패")
     sessions = pd.DatetimeIndex(pd.to_datetime(index.index, errors="coerce")).normalize()
@@ -133,6 +139,13 @@ def fetch_market_panels(
     if not markets or any(m not in MARKETS for m in markets):
         raise ValueError("Select at least one supported market")
     if stock_module is None:
+        from krx_auth import krx_login_configured
+        if not krx_login_configured():
+            raise ScanDataError(
+                "KRX 회원 계정 인증 필요: Streamlit Secrets 또는 서버 환경변수에 "
+                "KRX_ID, KRX_PW를 안전하게 등록하세요. "
+                "KRX_OPEN_API_KEY와는 별개입니다."
+            )
         from pykrx import stock as stock_module
     dates = discover_sessions(stock_module, day, history_sessions=max(22, lookback + 4))
     panels = []
