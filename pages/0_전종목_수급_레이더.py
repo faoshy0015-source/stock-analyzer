@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from access_gate import require_login
+from approved_email_gate import require_approved_email
 from app_navigation import render_navigation
 from full_flow_scan import ScanDataError, run_full_scan
 from flow_scan_delivery import already_notified, persist_scan, read_latest_scan
@@ -18,6 +19,7 @@ from kis_investor_source import KisInvestorError, fetch_kis_investor_history
 
 st.set_page_config(page_title="전종목 수급 레이더 · Stock Analyzer", page_icon="📡",
                    layout="wide")
+require_approved_email(st, "stock-analyzer", "Stock Analyzer")
 require_login(st)
 render_navigation(st)
 
