@@ -145,7 +145,7 @@ with st.expander("검색 조건 및 수동 실행", expanded=report is None):
             "Streamlit Cloud → App settings → Secrets에 KRX_ID와 KRX_PW를 등록하세요. "
             "Supabase 설정과는 별도입니다."
         )
-    if st.button("🔎 KOSPI·KOSDAQ 전종목 즉시 검색", type="primary",
+    if st.button("🔎 KOSPI·KOSDAQ 수급 전환 검색 (미확인 종목 제외)", type="primary",
                  use_container_width=True,
                  disabled=not bool(markets) or not KRX_LOGIN_READY):
         p = st.progress(0, text="시장 자료 확인 시작")
@@ -297,8 +297,8 @@ if report:
         )
     totals = report["totals"]
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("기준일 거래 종목", f"{totals['scanned_tickers']:,}개")
-    m2.metric("수급 판정 가능 종목", f"{totals.get('eligible_tickers', 0):,}개")
+    m1.metric("기준일 시세 확인 종목", f"{totals['scanned_tickers']:,}개")
+    m2.metric("필수 수급자료 완비 종목", f"{totals.get('eligible_tickers', 0):,}개")
     m3.metric("신규 수급 전환", f"{totals['new_signals']:,}개")
     m4.metric("연속 수급 전환", f"{totals['continuations']:,}개")
     if "eligible_ratio" in totals:
