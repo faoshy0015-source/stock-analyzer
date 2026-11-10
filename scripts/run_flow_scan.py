@@ -74,13 +74,14 @@ def main():
 
     try:
         result = run_full_scan(asof, markets=tuple(args.markets), lookback=args.lookback,
-                               min_coverage=0.90, progress=progress)
+                               min_coverage=None, progress=progress)
     except ScanDataError as exc:
         print("KRX data incomplete / scan aborted: " + str(exc), file=sys.stderr)
         return 2
 
     counts = result["totals"]
-    print("검증 완료: 기준일", result["asof"],
+    print("자료 확인 완료" + (" (부분 범위)" if result["status"] == "partial" else "") +
+          ": 기준일", result["asof"],
           "전체 거래 종목", counts["scanned_tickers"],
           "자료 완비 종목", counts["eligible_tickers"],
           "완비율", f"{counts['eligible_ratio']:.1%}",
@@ -97,8 +98,15 @@ def main():
         stored = False
 
     notified = False
-    if args.notify and counts["eligible_ratio"] < 0.90:
-        print("전시장 알림 보류: 실제 판정 가능 종목 비율이 90% 미만입니다.")
+    if args.notify and (
+        counts["eligible_ratio"] < 0.90
+        or result["coverage"]["min_investor_coverage"] < 0.90
+    ):
+        print(
+            "자동 알림 보류: 기간별 투자자 수급표 포함 비율 또는 "
+            "판정 가능 종목 비율이 90% 미만입니다. "
+            "검색 결과 자체는 부분 범위로 저장될 수 있습니다."
+        )
     elif args.notify and counts["new_signals"] and not alert_sent:
         try:
             notified = send_telegram(alert_text(result))
