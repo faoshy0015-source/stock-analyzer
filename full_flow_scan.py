@@ -421,6 +421,11 @@ def run_full_scan(
             "KRX 종목별 수급 분석 단계 실패: " + type(exc).__name__
             + ". 원천 자료의 열 구조와 결측값을 확인하세요."
         ) from exc
+    if counts["eligible_tickers"] == 0:
+        raise ScanDataError(
+            "필수 거래일의 개인·외국인·기관 수급자료가 모두 확인된 종목이 "
+            "0개입니다. 결과를 '수급 전환 0건'으로 처리할 수 없어 검색을 중단합니다."
+        )
     min_daily = min(
         value for row in quality
         for value in row["investor_coverage"].values()
