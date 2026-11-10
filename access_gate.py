@@ -1,35 +1,37 @@
-"""Email-verified access gate for approved Stock Analyzer viewers only.
+"""Session-based application password gate for HanaV Stock Analyzer.
 
-Authentication uses Supabase Auth OTP and an exact-email allowlist configured
-in Streamlit Secrets. The historical APP_PASSWORD / session boolean cannot
-grant access after this change.
+This is an app-level shared-password barrier, not user identity management.
+Credentials must be stored in Streamlit Secrets, never in GitHub.
 """
 from __future__ import annotations
 
-import time
 import hmac
 
-from email_auth import (
-    EmailAuthError, LAST_SENT_KEY, PENDING_KEY, SESSION_KEY, clear_auth_state,
-    get_email_auth_config, is_approved, normal_email, otp_resend_permitted,
-    request_email_code, validate_session, verify_email_code,
-)
-
-
-PASSWORD_PASSED_KEY = "_stock_verified_existing_app_password"
-LOGIN_PASSWORD_NAMES = (
-    "APP_PASSWORD", "APP_ACCESS_PASSWORD", "LOGIN_PASSWORD",
-    "ACCESS_PASSWORD", "PASSWORD", "APP_PASS", "APP_PW",
-    "STOCK_ANALYZER_PASSWORD", "ADMIN_PASSWORD",
+PASSWORD_SECRET_NAMES = (
+    "APP_PASSWORD",
+    "APP_ACCESS_PASSWORD",
+    "LOGIN_PASSWORD",
+    "ACCESS_PASSWORD",
+    "PASSWORD",
+    "APP_PASS",
+    "APP_PW",
+    "STOCK_ANALYZER_PASSWORD",
+    "ADMIN_PASSWORD",
+    "app_password",
+    "password",
 )
 
 
 def configured_password(secrets):
-    """Preserve the app's existing password as an *additional* access check."""
-    for name in LOGIN_PASSWORD_NAMES:
+    """Find a non-empty application password from accepted secret names.
+
+    Prefer APP_PASSWORD when present. A missing secret must *not* disable
+    authentication or switch the app into a public/demo mode.
+    """
+    for name in PASSWORD_SECRET_NAMES:
         try:
             value = secrets.get(name)
-        except Exception:
+        except Exception:  # absent/unconfigured Streamlit Secrets: fail closed
             continue
         if isinstance(value, str) and value.strip():
             return value.strip()
@@ -37,54 +39,21 @@ def configured_password(secrets):
 
 
 def verify_password(candidate, configured):
-    return (
-        isinstance(candidate, str) and isinstance(configured, str)
-        and bool(configured)
-        and hmac.compare_digest(candidate.encode("utf-8"), configured.encode("utf-8"))
-    )
+    """Constant-time comparison; never expose or record either string."""
+    return (isinstance(candidate, str) and isinstance(configured, str)
+            and bool(configured)
+            and hmac.compare_digest(candidate.encode("utf-8"),
+                                    configured.encode("utf-8")))
 
 
 def require_login(st):
-    """Deny access unless email is verified, approved and password is valid."""
-    try:
-        config = get_email_auth_config(st.secrets)
-    except EmailAuthError as exc:
-        # Incomplete setup deliberately locks the whole application,
-        # including viewers with an old shared-password session.
-        st.error(str(exc))
-        st.caption(
-            "접근이 차단된 상태입니다. 앱 소유자가 승인 이메일과 "
-            "Supabase 인증 설정을 완료해야 합니다."
-        )
-        st.stop()
-        return
+    """Green-first, ETF Finder-style centered login without changing authentication.
 
-    # Explicitly disregard obsolete password-era authentication flags.
-    st.session_state.pop("_hanav_stock_authenticated", None)
-    required_password = configured_password(st.secrets)
-    saved = st.session_state.get(SESSION_KEY)
-    password_gate = False
-    if saved:
-        try:
-            verified = validate_session(config, saved)
-        except EmailAuthError:
-            st.error("이메일 인증 서버 확인에 실패했습니다. 재접속 후 다시 시도하세요.")
-            st.stop()
-            return
-        if verified is not None and is_approved(verified["email"], config):
-            st.session_state[SESSION_KEY] = verified
-            if required_password and not st.session_state.get(PASSWORD_PASSED_KEY):
-                password_gate = True
-            else:
-                with st.sidebar:
-                    st.caption("🔐 승인 계정: " + verified["email"])
-                    if st.button("🔒 로그아웃", key="stock_email_logout",
-                                 use_container_width=True):
-                        clear_auth_state(st)
-                        st.rerun()
-                return
-        else:
-            clear_auth_state(st)
+    The UI is emitted only for unauthenticated sessions. Secrets stay server
+    side and a failed or unconfigured password always denies access.
+    """
+    if st.session_state.get("_hanav_stock_authenticated") is True:
+        return
 
     st.markdown(
         """
@@ -94,77 +63,98 @@ def require_login(st):
         [data-testid="stSidebarCollapsedControl"] {display:none!important}
         [data-testid="stAppViewContainer"],
         [data-testid="stMain"] {
-            background:linear-gradient(160deg,#f4f8f7 0%,#f8fcfa 68%,#f0f7f2 100%)!important;
-            color:#203d35!important;
+            background: linear-gradient(160deg,#f4f8f7 0%,#f8fcfa 68%,#f0f7f2 100%) !important;
+            color:#203d35 !important;
         }
-        header[data-testid="stHeader"]{background:#f4f8f7!important}
-        .block-container{
+        header[data-testid="stHeader"] {background:#f4f8f7!important}
+        .block-container {
             max-width:1080px!important;
-            padding-top:clamp(2.8rem,9vh,6rem)!important;
+            padding-top: clamp(2.8rem, 9vh, 6rem)!important;
             padding-bottom:3rem!important;
         }
-        .hanav-login-brand{
-            max-width:500px;margin:0 auto 22px;text-align:center;
+        .hanav-login-brand {
+            max-width:500px;
+            margin:0 auto 22px;
+            text-align:center;
         }
-        .hanav-login-accent{
-            width:52px;height:4px;border-radius:10px;margin:0 auto 20px;
+        .hanav-login-accent {
+            width:52px;height:4px;border-radius:10px;
+            margin:0 auto 20px;
             background:linear-gradient(90deg,#008878 0%,#008878 76%,#e87d31 76%,#e87d31 100%);
         }
-        .hanav-login-title{
+        .hanav-login-title {
             color:#008878!important;
             font-size:clamp(29px,3.9vw,38px);
             font-weight:850;letter-spacing:-.045em;
             margin:0 0 8px;line-height:1.3;
         }
-        .hanav-login-subtitle{
+        .hanav-login-subtitle {
             color:#536f64;font-size:14px;font-weight:600;
             line-height:1.6;margin:0 0 5px;
         }
-        .hanav-login-feature{
-            color:#71877d;font-size:12px;line-height:1.65;margin:0;
+        .hanav-login-feature {
+            color:#71877d;font-size:12px;
+            line-height:1.65;margin:0;
         }
-        .hanav-login-signature{
+        .hanav-login-signature {
             margin-top:10px;font-size:11px;font-weight:650;
             letter-spacing:.04em;color:#bc7a3f;
         }
-        [data-testid="stForm"]{
+        [data-testid="stForm"] {
             background:#ffffff!important;
             border:1px solid #cbded5!important;
             border-radius:14px!important;
             padding:20px 22px 23px!important;
             box-shadow:0 8px 25px rgba(18,74,56,.065);
         }
-        [data-testid="stForm"] input{
+        [data-testid="stForm"] [data-testid="stWidgetLabel"] p {
+            color:#315e53!important;font-size:13px!important;font-weight:700!important;
+        }
+        [data-testid="stForm"] input[type="password"] {
             background:#fff!important;color:#203d35!important;
             border:1px solid #cbded5!important;
             border-radius:9px!important;min-height:44px!important;
         }
-        [data-testid="stFormSubmitButton"] button{
+        [data-testid="stForm"] input:focus {
+            border-color:#008878!important;
+            box-shadow:0 0 0 3px rgba(0,136,120,.13)!important;
+        }
+        [data-testid="stFormSubmitButton"] button,
+        [data-testid="stFormSubmitButton"] button[kind="primary"] {
             background:#008878!important;color:#ffffff!important;
-            border:1px solid #008878!important;border-radius:9px!important;
-            min-height:46px!important;font-weight:750!important;
+            border:1px solid #008878!important;
+            border-radius:9px!important;min-height:46px!important;
+            font-weight:750!important;
+            box-shadow:0 5px 14px rgba(0,108,93,.13)!important;
         }
-        [data-testid="stFormSubmitButton"] button:hover{
-            background:#006f62!important;border-color:#006f62!important;
+        [data-testid="stFormSubmitButton"] button:hover {
+            background:#006f62!important;
+            border-color:#006f62!important;
         }
-        [data-testid="stFormSubmitButton"] button p{color:#ffffff!important}
-        .hanav-login-footer{
+        [data-testid="stFormSubmitButton"] button p {color:#ffffff!important}
+        .hanav-login-footer {
             max-width:440px;margin:19px auto 0;
             padding-top:11px;border-top:1px solid #d6e6dd;
             text-align:center;color:#83968d;font-size:11px;
+        }
+        @media(max-width:700px) {
+            .block-container {padding-top:2.5rem!important}
+            .hanav-login-brand {margin-bottom:16px}
+            [data-testid="stForm"] {padding:16px!important}
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
+
     st.markdown(
         """
-        <div class="hanav-login-brand" aria-label="Stock Analyzer email login">
+        <div class="hanav-login-brand" aria-label="Stock Analyzer login">
           <div class="hanav-login-accent"></div>
           <h1 class="hanav-login-title">Stock Analyzer</h1>
           <p class="hanav-login-subtitle">Private Investment Dashboard</p>
           <p class="hanav-login-feature">
-            승인 이메일 인증 · 종목 분석 · 수급 전환 · 리서치
+            종목 분석 · 재무 · 수급 전환 · 리서치 리포트
           </p>
           <div class="hanav-login-signature">CREATED BY K.H.AHN</div>
         </div>
@@ -174,88 +164,30 @@ def require_login(st):
 
     _, center, _ = st.columns([1, 1.15, 1])
     with center:
-        pending = st.session_state.get(PENDING_KEY)
-        if pending and not is_approved(pending, config):
-            st.session_state.pop(PENDING_KEY, None)
-            pending = None
-        if password_gate:
-            st.caption(
-                "이메일 인증 완료: " + st.session_state[SESSION_KEY]["email"]
-                + " · 기존 앱 비밀번호를 입력해 주세요."
+        expected = configured_password(st.secrets)
+        if not expected:
+            st.error("앱 비밀번호 설정을 확인할 수 없습니다. "
+                     "Streamlit Cloud → App settings → Secrets에 "
+                     'APP_PASSWORD = "설정한 비밀번호" 형식으로 저장해 주세요.')
+            st.stop()
+
+        with st.form("stock_analyzer_sign_in", clear_on_submit=True):
+            candidate = st.text_input(
+                "비밀번호", type="password",
+                placeholder="비밀번호를 입력하세요", autocomplete="off",
             )
-            with st.form("stock_existing_password_second_factor", clear_on_submit=True):
-                password_candidate = st.text_input(
-                    "앱 비밀번호", type="password",
-                    placeholder="기존 Stock Analyzer 비밀번호",
-                    autocomplete="off",
-                )
-                password_submit = st.form_submit_button(
-                    "🔐 최종 로그인", type="primary", use_container_width=True,
-                )
-            if password_submit:
-                if verify_password(password_candidate, required_password):
-                    st.session_state[PASSWORD_PASSED_KEY] = True
-                    st.rerun()
-                else:
-                    st.error("앱 비밀번호가 일치하지 않습니다.")
-        elif not pending:
-            with st.form("stock_email_otp_request", clear_on_submit=False):
-                email = st.text_input(
-                    "승인된 이메일 주소",
-                    placeholder="이메일 주소를 입력하세요",
-                    autocomplete="email",
-                    max_chars=254,
-                )
-                requested = st.form_submit_button(
-                    "✉️ 이메일 인증번호 받기",
-                    type="primary", use_container_width=True,
-                )
-            if requested:
-                requested_email = normal_email(email)
-                if not is_approved(requested_email, config):
-                    st.error("승인된 이메일 주소가 아닙니다. 관리자에게 문의하세요.")
-                elif not otp_resend_permitted(st.session_state, requested_email):
-                    st.warning("인증번호는 60초 간격으로 재발송할 수 있습니다.")
-                else:
-                    try:
-                        request_email_code(config, requested_email)
-                        st.session_state[PENDING_KEY] = requested_email
-                        st.session_state[LAST_SENT_KEY] = {
-                            "email": requested_email, "time": time.time()}
-                        st.rerun()
-                    except EmailAuthError as exc:
-                        st.error(str(exc))
-        else:
-            st.caption("인증번호 발송 요청: " + pending)
-            with st.form("stock_email_otp_verify", clear_on_submit=True):
-                code = st.text_input(
-                    "이메일 인증번호",
-                    type="password",
-                    placeholder="메일의 숫자 인증번호",
-                    autocomplete="one-time-code",
-                    max_chars=10,
-                )
-                submitted = st.form_submit_button(
-                    "🔐 이메일 인증 후 로그인",
-                    type="primary", use_container_width=True,
-                )
-            if submitted:
-                try:
-                    verified = verify_email_code(config, pending, code)
-                    st.session_state[SESSION_KEY] = verified
-                    st.session_state.pop(PENDING_KEY, None)
-                    st.rerun()
-                except EmailAuthError as exc:
-                    st.error(str(exc))
-            if st.button("다른 이메일 주소 사용", key="change_stock_login_email"):
-                st.session_state.pop(PENDING_KEY, None)
-                st.rerun()
-            st.caption(
-                "인증번호가 도착하지 않았다면 스팸함을 확인하세요. "
-                "Supabase 기본 메일 제공자에는 발송 한도가 있습니다."
+            submitted = st.form_submit_button(
+                "🔐 로그인", type="primary", use_container_width=True,
             )
         st.markdown(
-            '<div class="hanav-login-footer">APPROVED EMAIL ACCESS · SECURE RESEARCH</div>',
+            '<div class="hanav-login-footer">PRIVATE RESEARCH · SECURE ACCESS</div>',
             unsafe_allow_html=True,
         )
+
+        if submitted:
+            if verify_password(candidate, expected):
+                st.session_state["_hanav_stock_authenticated"] = True
+                st.rerun()
+            else:
+                st.error("비밀번호가 일치하지 않습니다.")
     st.stop()
