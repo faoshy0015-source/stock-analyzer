@@ -30,7 +30,9 @@ def _summary(report, message):
     body = (
         "## Stock Analyzer · 수급 전환 전시장 검색\n\n"
         f"- 기준 거래일: {report['asof']}\n"
-        f"- 분석 종목: {totals.get('scanned_tickers', 0)}\n"
+        f"- 기준일 거래 종목: {totals.get('scanned_tickers', 0)}\n"
+        f"- 기간 수급자료 완비 종목: {totals.get('eligible_tickers', 0)}\n"
+        f"- 판정 가능 비율: {totals.get('eligible_ratio', 0):.1%}\n"
         f"- 신규 수급전환: {totals.get('new_signals', 0)}\n"
         f"- 연속 수급전환: {totals.get('continuations', 0)}\n"
         f"- 결과: {message}\n"
@@ -72,14 +74,16 @@ def main():
 
     try:
         result = run_full_scan(asof, markets=tuple(args.markets), lookback=args.lookback,
-                               min_coverage=0.98, progress=progress)
+                               min_coverage=0.90, progress=progress)
     except ScanDataError as exc:
         print("KRX data incomplete / scan aborted: " + str(exc), file=sys.stderr)
         return 2
 
     counts = result["totals"]
     print("검증 완료: 기준일", result["asof"],
-          "분석 종목", counts["scanned_tickers"],
+          "전체 거래 종목", counts["scanned_tickers"],
+          "자료 완비 종목", counts["eligible_tickers"],
+          "완비율", f"{counts['eligible_ratio']:.1%}",
           "신규 전환", counts["new_signals"],
           "연속 전환", counts["continuations"])
 
@@ -93,7 +97,9 @@ def main():
         stored = False
 
     notified = False
-    if args.notify and counts["new_signals"] and not alert_sent:
+    if args.notify and counts["eligible_ratio"] < 0.90:
+        print("전시장 알림 보류: 실제 판정 가능 종목 비율이 90% 미만입니다.")
+    elif args.notify and counts["new_signals"] and not alert_sent:
         try:
             notified = send_telegram(alert_text(result))
             print("Telegram 알림:", "발송됨" if notified else "미설정(토큰·채팅ID 필요)")

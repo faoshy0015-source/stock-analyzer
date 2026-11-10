@@ -18,7 +18,7 @@ import pandas as pd
 MARKETS = ("KOSPI", "KOSDAQ")
 INVESTORS = {"개인": "personal", "외국인": "foreign", "기관합계": "institution"}
 REQUIRED_FLOW = ("순매수거래량", "순매수거래대금")
-DEFAULT_COVERAGE = 0.90
+DEFAULT_COVERAGE = 0.90  # Minimum daily response; excludes missing stocks from signals.
 
 
 class ScanDataError(RuntimeError):
@@ -75,7 +75,7 @@ def assemble_daily_snapshot(day, market, prices, investor_tables, min_coverage=D
             raise ScanDataError(
                 f"{market} {day}: {investor} 자료의 종목 커버리지 "
                 f"{ratio:.1%} (필요 {min_coverage:.0%}, {present}/{universe}); "
-                "상위 순위만 제공된 것으로 판단되어 전종목 검색 중단")
+                "자료가 제한되거나 누락되어 시장 전체 검색 중단")
         raw = raw.rename(columns={
             "순매수거래량": prefix + "_qty",
             "순매수거래대금": prefix + "_krw",
@@ -199,13 +199,17 @@ def evaluate_stock_rows(
         "institution_qty", "institution_krw", "close", "volume", "turnover",
     )
     calendar = pd.DatetimeIndex(sessions)
-    if not calendar.isin(frame.index).all():
+    # Only the exact 10/20 prior market sessions are required for a signal.
+    # Missing investors/prices in any such session disqualifies this symbol;
+    # rows from older sessions must never substitute for missing days.
+    check_dates = calendar[-(lookback + 1):]
+    if len(check_dates) != lookback + 1 or not check_dates.isin(frame.index).all():
         return None
     frame = frame.reindex(calendar)
-    if frame[list(required)].isna().any().any():
+    if frame.loc[check_dates, list(required)].isna().any().any():
         return None
-    target = frame.iloc[-1]
-    history = frame.iloc[-(lookback + 1):-1]
+    target = frame.loc[check_dates[-1]]
+    history = frame.loc[check_dates[:-1]]
     if len(history) != lookback:
         return None
     buyer_days = int((history["personal_qty"] > 0).sum())
@@ -225,13 +229,14 @@ def evaluate_stock_rows(
     absorption = buyer_qty / abs(float(target["personal_qty"]))
     volume_multiple = float(target["volume"]) / previous_volume
     streak = 0
+    # The full KRX calendar (including any missing rows) breaks a streak.
     for _, row in frame.iloc[::-1].iterrows():
-        if _positive_last(row):
-            streak += 1
-        else:
+        if row[list(required)].isna().any() or not _positive_last(row):
             break
+        streak += 1
     price_history = frame["close"].tail(20)
-    ma20 = float(price_history.mean()) if len(price_history) == 20 else None
+    ma20 = float(price_history.mean()) if (
+        len(price_history) == 20 and price_history.notna().all()) else None
     price_pos = float((target["close"] / ma20 - 1) * 100) if ma20 and ma20 > 0 else None
     strength = round(min(100,
         30 * buyer_days / lookback
@@ -270,32 +275,53 @@ def evaluate_stock_rows(
 
 
 def evaluate_market_panel(panel, dates, lookback=10, **kwargs):
-    """Screen all aligned ticker rows, never narrowing via a top-N candidate list."""
+    """Screen all price-universe symbols; count only complete, aligned histories."""
     dates = pd.DatetimeIndex(dates)
     if panel.empty or len(dates) < max(22, lookback + 4):
         raise ScanDataError("필수 수급·가격 데이터가 부족합니다")
     if "market" not in panel or "code" not in panel:
         raise ScanDataError("종목 데이터 스키마 오류")
+    required = (
+        "personal_qty", "personal_krw", "foreign_qty", "foreign_krw",
+        "institution_qty", "institution_krw", "close", "volume", "turnover",
+    )
+    eligible_dates = dates[-(lookback + 1):]
     output = []
     incomplete = 0
+    eligible = 0
+    missing_asof = 0
     asof = dates[-1]
     for (market, ticker), symbol in panel.groupby(["market", "code"], sort=False):
-        if pd.Timestamp(asof) not in pd.DatetimeIndex(symbol["date"]):
+        indexed = symbol.sort_values("date").set_index("date")
+        if asof not in indexed.index:
+            missing_asof += 1
+            continue
+        if not eligible_dates.isin(indexed.index).all():
             incomplete += 1
             continue
+        window = indexed.reindex(eligible_dates)
+        if window[list(required)].isna().any().any():
+            incomplete += 1
+            continue
+        eligible += 1
         hit = evaluate_stock_rows(symbol, dates, lookback=lookback, **kwargs)
         if hit is not None:
             output.append(hit)
     output.sort(key=lambda d: (d["first_day"], d["strength"],
                                abs(d["personal_krw"])), reverse=True)
+    today_count = int(panel.loc[
+        panel["date"] == asof, ["market", "code"]].drop_duplicates().shape[0])
+    ratio = round(eligible / today_count, 4) if today_count else 0
     return output, {
-        "scanned_tickers": int(panel.loc[panel["date"] == asof, ["market", "code"]].drop_duplicates().shape[0]),
-        "missing_asof": incomplete,
+        "scanned_tickers": today_count,
+        "eligible_tickers": eligible,
+        "excluded_incomplete_tickers": incomplete,
+        "eligible_ratio": ratio,
+        "missing_asof": missing_asof,
         "matched_signals": len(output),
         "new_signals": sum(1 for r in output if r["first_day"]),
         "continuations": sum(1 for r in output if not r["first_day"]),
     }
-
 
 def run_full_scan(
     day, markets=MARKETS, lookback=10, min_coverage=DEFAULT_COVERAGE,
@@ -317,6 +343,7 @@ def run_full_scan(
             "min_investor_coverage": min(
                 value for row in quality
                 for value in row["investor_coverage"].values()),
+            "required_daily_coverage": min_coverage,
         },
         "results": hits,
     }

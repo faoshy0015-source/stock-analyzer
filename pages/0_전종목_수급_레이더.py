@@ -61,8 +61,9 @@ if not KRX_LOGIN_READY:
 
 st.info(
     "KRX 거래일별 전 종목 수급표와 가격 자료를 교차 검증합니다. "
-    "KRX가 순위 상위종목만 돌려주거나 자료가 누락되면 **검색 결과 0건이 아니라 실패**로 표시합니다. "
-    "장중 신호가 아닌 마감 기준(EOD) 검색이며, 수급 전환은 매수 추천이 아닙니다."
+    "KRX 일별 투자주체별 수급표의 포함 종목 비율이 90% 미만이면 검색을 중단합니다. "
+    "90% 이상인 경우에도 누락된 종목은 제외하고 **직전 10/20거래일 수급이 모두 확인된 종목만** 판정합니다. "
+    "일부 누락 종목에서는 신호가 발생했을 수 있습니다. 장중 신호가 아닌 마감 기준(EOD) 검색입니다."
 )
 
 env = server_env()
@@ -153,7 +154,7 @@ with st.expander("검색 조건 및 수동 실행", expanded=report is None):
                 st.session_state.pop("marketwide_last_error", None)
                 report = run_full_scan(
                     str(selected_day), markets=tuple(markets), lookback=lookback,
-                    min_coverage=0.98, min_sell_multiple=sell_multiple,
+                    min_coverage=0.90, min_sell_multiple=sell_multiple,
                     min_personal_share=sell_share,
                     min_turnover=turnover * 100_000_000,
                     progress=_progress)
@@ -204,27 +205,40 @@ if report:
         )
     totals = report["totals"]
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("조회된 거래 종목", f"{totals['scanned_tickers']:,}개")
-    m2.metric("신규 수급 전환", f"{totals['new_signals']:,}개")
-    m3.metric("연속 수급 전환", f"{totals['continuations']:,}개")
-    m4.metric(
-        "최저 자료 커버리지",
-        f"{report['coverage']['min_investor_coverage']:.1%}")
+    m1.metric("기준일 거래 종목", f"{totals['scanned_tickers']:,}개")
+    m2.metric("수급 판정 가능 종목", f"{totals.get('eligible_tickers', 0):,}개")
+    m3.metric("신규 수급 전환", f"{totals['new_signals']:,}개")
+    m4.metric("연속 수급 전환", f"{totals['continuations']:,}개")
+    if "eligible_ratio" in totals:
+        st.caption(
+            f"직전 {report['settings'].get('lookback', 10)}거래일+기준일의 동일 날짜 "
+            f"수급·주가 확인 완료: {totals['eligible_ratio']:.1%} "
+            f"({totals.get('eligible_tickers', 0):,}/{totals['scanned_tickers']:,}종목). "
+            f"자료 미완비 제외: {totals.get('excluded_incomplete_tickers', 0):,}종목. "
+            f"전체 일별 수급표 최소 커버리지: "
+            f"{report['coverage']['min_investor_coverage']:.1%}."
+        )
+        if totals['eligible_ratio'] < 0.98:
+            st.warning(
+                "일부 거래 종목의 과거 수급 자료가 누락돼 검색 대상에서 제외했습니다. "
+                "표시된 0건이나 검색 종목 수를 전체 시장의 확정적인 결과로 해석하면 안 됩니다."
+            )
 
     with st.expander("데이터 검증 범위 및 기준", expanded=False):
         st.caption(
             "한국거래소 KRX 일별 종목 시세·투자자별 순매수 상위종목 페이지 기반 pykrx. "
             "일별 해당 시장에서 거래가 발생한 종목 대비 개인/외국인/기관 "
-            "원천표가 포함하는 종목의 최소 비율을 검증합니다. "
-            "전시장 100% 완전성·실시간성을 보장하지 않습니다."
+            "수급표가 포함하는 종목의 비율을 검증하며, 기준은 90%입니다. "
+            "기간 내 단 하루라도 누락된 종목은 신호 계산에서 제외합니다. "
+            "따라서 전시장 100% 완전성·실시간성을 보장하지 않습니다."
         )
         checks = pd.DataFrame(report["coverage"]["per_day_market"])
         st.dataframe(checks, use_container_width=True, hide_index=True)
 
     if not report["results"]:
         st.info(
-            "자료 검증은 통과했지만 이번 기준일의 선별 조건을 충족한 종목이 없습니다. "
-            "조건을 변경해 재검색할 수 있습니다."
+            "수급 자료가 확인된 종목 중 이번 기준일의 선별 조건을 충족한 종목이 없습니다. "
+            "누락된 종목의 신호는 확인되지 않았으며 조건을 변경해 재검색할 수 있습니다."
         )
     else:
         e1, e2 = st.columns([1, 2])
