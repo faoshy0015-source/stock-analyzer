@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 import access_gate
-from access_gate import require_login
+from access_gate import require_login, PASSWORD_PASSED_KEY
 from email_auth import PENDING_KEY, SESSION_KEY
 
 
@@ -138,7 +138,8 @@ def test_approved_saved_session_requires_online_validation_each_rerun(monkeypatc
         **session, "user_id": "uuid"
     })
     monkeypatch.setattr(access_gate, "validate_session", check)
-    st = FakeStreamlit(SECRETS, state={SESSION_KEY: session})
+    st = FakeStreamlit(
+        SECRETS, state={SESSION_KEY: session, PASSWORD_PASSED_KEY: True})
     require_login(st)
     require_login(st)
     assert check.call_count == 2
@@ -164,7 +165,8 @@ def test_logout_clears_all_session_state(monkeypatch):
     monkeypatch.setattr(access_gate, "validate_session", lambda *args: {
         **session, "user_id": "uuid"})
     st = FakeStreamlit(SECRETS, state={
-        SESSION_KEY: session, "old_stock_rows": [1, 2, 3]},
+        SESSION_KEY: session, PASSWORD_PASSED_KEY: True,
+        "old_stock_rows": [1, 2, 3]},
         logout=True)
     with pytest.raises(Reran):
         require_login(st)
@@ -182,3 +184,60 @@ def test_etf_finder_green_theme_preserved_for_email_login():
     assert "background:#008878" in text
     assert "#e87d31" in text
     assert "APP_PASSWORD" not in text
+
+
+def test_approved_email_without_existing_password_stays_on_second_factor(monkeypatch):
+    verified = {"email": "owner@example.com",
+                "access_token": "access", "refresh_token": "refresh",
+                "user_id": "uuid"}
+    monkeypatch.setattr(access_gate, "validate_session",
+                        lambda *args: verified)
+    st = FakeStreamlit(SECRETS, state={SESSION_KEY: verified})
+    with pytest.raises(Stopped):
+        require_login(st)
+    assert st.form_count == 1
+    assert PASSWORD_PASSED_KEY not in st.session_state
+    assert any("이메일 인증 완료" in x for x in st.messages)
+
+
+def test_correct_app_password_requires_valid_email_first(monkeypatch):
+    verified = {"email": "owner@example.com",
+                "access_token": "access", "refresh_token": "refresh",
+                "user_id": "uuid"}
+    monkeypatch.setattr(access_gate, "validate_session",
+                        lambda *args: verified)
+    st = FakeStreamlit(
+        SECRETS, state={SESSION_KEY: verified},
+        input_text="legacy_password_must_not_unlock", submit=True)
+    with pytest.raises(Reran):
+        require_login(st)
+    assert st.session_state[PASSWORD_PASSED_KEY] is True
+    assert st.session_state[SESSION_KEY] == verified
+
+
+def test_wrong_password_still_blocks_verified_email(monkeypatch):
+    verified = {"email": "owner@example.com",
+                "access_token": "access", "refresh_token": "refresh",
+                "user_id": "uuid"}
+    monkeypatch.setattr(access_gate, "validate_session",
+                        lambda *args: verified)
+    st = FakeStreamlit(
+        SECRETS, state={SESSION_KEY: verified},
+        input_text="wrong", submit=True)
+    with pytest.raises(Stopped):
+        require_login(st)
+    assert PASSWORD_PASSED_KEY not in st.session_state
+    assert st.errors == ["앱 비밀번호가 일치하지 않습니다."]
+
+
+def test_no_existing_password_config_requires_email_otp_only(monkeypatch):
+    secrets = {key: value for key, value in SECRETS.items()
+               if key != "APP_PASSWORD"}
+    verified = {"email": "owner@example.com",
+                "access_token": "access", "refresh_token": "refresh",
+                "user_id": "uuid"}
+    monkeypatch.setattr(access_gate, "validate_session",
+                        lambda *args: verified)
+    st = FakeStreamlit(secrets, state={SESSION_KEY: verified})
+    require_login(st)
+    assert st.form_count == 0
