@@ -27,82 +27,82 @@ from score_table import render_score_table
 
 st.set_page_config(page_title='Stock Analyzer · K.H.AHN', page_icon='📊', layout='wide',
                    initial_sidebar_state='expanded')
-COLORS={'ink':'#30463d','teal':'#138c78','orange':'#e87d31','amber':'#ecad4c','mint':'#e9f6ee','cream':'#fffaf3','red':'#c95b55'}
+COLORS={'ink':'#203d35','teal':'#008878','orange':'#e87d31','amber':'#ecad4c','mint':'#e9f6ee','cream':'#fffaf3','red':'#c95b55'}
 st.markdown('''<style>
 :root{
-  --stock-cream:#fffaf3;--stock-paper:#fffefa;--stock-mint:#eaf7ef;
-  --stock-orange:#e87d31;--stock-teal:#138c78;--stock-ink:#30463d;
-  --stock-border:#eddfce;
+  --stock-cream:#f4f8f7;--stock-paper:#ffffff;--stock-mint:#e3f1eb;
+  --stock-orange:#e87d31;--stock-teal:#008878;--stock-ink:#203d35;
+  --stock-border:#cfdfd9;
 }
 html,body,[class*="css"]{font-family:"Pretendard","Noto Sans KR","Malgun Gothic",sans-serif}
 [data-testid="stAppViewContainer"]{
-  background:linear-gradient(150deg,#fffdf9 0%,#fffaf3 42%,#f7fcf7 100%);
+  background:linear-gradient(150deg,#f7fcfa 0%,#f4f8f7 48%,#edf6f0 100%);
 }
 .block-container{padding-top:1.6rem;max-width:1400px;padding-bottom:3rem}
 [data-testid="stSidebar"]{
-  background:linear-gradient(175deg,#fff8ed 0%,#fdfaf3 49%,#f1f9f3 100%)!important;
-  border-right:1px solid #eadfce;
+  background:linear-gradient(175deg,#edf5f2 0%,#f4f8f7 56%,#eef6f1 100%)!important;
+  border-right:1px solid #cfdfd9;
 }
 [data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2{
   color:#345a4b!important;
 }
 [data-testid="stSidebar"] [data-testid="stButton"] button{
-  border:1px solid #e8d8bf!important;
+  border:1px solid #c8dbd3!important;
   border-radius:10px!important;
   color:#365b4a!important;
-  background:#fffefa!important;
+  background:#ffffff!important;
   font-weight:620!important;
 }
 [data-testid="stSidebar"] [data-testid="stButton"] button:hover{
-  border-color:#e6a266!important;background:#fff0dc!important;color:#925018!important;
+  border-color:#008878!important;background:#e5f2ec!important;color:#006f62!important;
 }
 [data-testid="stSidebar"] [data-testid="stTextInput"] input{
-  border:1px solid #e4cfb2!important;
+  border:1px solid #c8dbd3!important;
   background:#fffefa!important;border-radius:10px!important;
 }
-[data-testid="stSidebar"] hr{border-color:#ecdfcc}
+[data-testid="stSidebar"] hr{border-color:#d5e6dc}
 .brand{
   position:relative;overflow:hidden;
   padding:24px 27px 23px;
-  background:linear-gradient(112deg,#fff0d7 0%,#fff9ea 49%,#e3f6e9 100%);
-  border:1px solid #efdcc4;
-  border-left:5px solid #e87d31;
+  background:linear-gradient(112deg,#dcefe6 0%,#f8fcfa 65%,#edf7f1 100%);
+  border:1px solid #c8e3d6;
+  border-left:5px solid #008878;
   border-radius:16px;
-  box-shadow:0 7px 24px rgba(121,89,49,.07);
+  box-shadow:0 7px 24px rgba(26,97,78,.065);
   margin-bottom:15px;
 }
 .brand:after{
   content:"";position:absolute;width:190px;height:190px;
-  right:-48px;top:-100px;border:1px solid rgba(225,143,64,.23);
-  border-radius:50%;box-shadow:0 0 0 34px rgba(232,125,49,.045),
+  right:-48px;top:-100px;border:1px solid rgba(0,136,120,.21);
+  border-radius:50%;box-shadow:0 0 0 34px rgba(0,136,120,.045),
     0 0 0 68px rgba(19,140,120,.045);pointer-events:none;
 }
 .brand h1{
   position:relative;margin:8px 0 6px;font-size:29px;
-  font-weight:820;letter-spacing:-.8px;color:#2e5547;
+  font-weight:820;letter-spacing:-.8px;color:#164b42;
 }
 .brand p{position:relative;margin:3px 0;color:#64776a;font-size:13px}
 .brand .eyebrow{
   position:relative;font-size:10px;letter-spacing:1.8px;
   color:#c66d27;font-weight:800;
 }
-.slim{background:#fff0d8;color:#9a5c22;padding:6px 10px;
+.slim{background:#e6f3ed;color:#126958;padding:6px 10px;
   border-radius:8px;display:inline-block;font-size:12px;font-weight:700}
 .stTabs [data-baseweb="tab-list"]{gap:7px;flex-wrap:wrap}
 .stTabs [data-baseweb="tab"]{
-  background:#f7f3e9;border:1px solid #eee4d5;border-radius:9px;
+  background:#f6faf8;border:1px solid #d4e7dc;border-radius:9px;
   padding:8px 13px;color:#536d5e;
 }
 .stTabs [aria-selected="true"]{
-  background:#ffe7c8!important;color:#9d5014!important;
-  border:1px solid #f2c58d!important;font-weight:740!important;
+  background:#dcefe6!important;color:#006f62!important;
+  border:1px solid #a8d0bf!important;font-weight:740!important;
 }
-.stTabs [data-baseweb="tab-highlight"]{background:#e87d31!important}
+.stTabs [data-baseweb="tab-highlight"]{background:#008878!important}
 [data-testid="stMetric"]{
   position:relative;overflow:hidden;background:#fffefa;
-  border:1px solid #efdfcc;border-top:3px solid #e8a15e;
+  border:1px solid #cfdfd9;border-top:3px solid #008878;
   border-radius:13px;padding:16px;
-  box-shadow:0 3px 15px rgba(112,85,50,.055);
+  box-shadow:0 3px 15px rgba(18,94,76,.05);
 }
 [data-testid="stMetricLabel"]{color:#5b6d5e!important}
 [data-testid="stMetricValue"]{
@@ -110,14 +110,27 @@ html,body,[class*="css"]{font-family:"Pretendard","Noto Sans KR","Malgun Gothic"
   color:#2d5748!important;font-weight:720!important;
 }
 [data-testid="stMetricDelta"]{font-weight:700}
-[data-testid="stExpander"]{border-color:#e8daca!important;border-radius:11px}
-[data-testid="stDataFrame"]{border:1px solid #eee3d4;border-radius:9px}
+[data-testid="stMain"] [data-testid="stButton"] button[kind="primary"],
+[data-testid="stMain"] [data-testid="stBaseButton-primary"]{
+  background:#008878!important;border:1px solid #008878!important;
+  color:#fff!important;font-weight:750!important;
+}
+[data-testid="stMain"] [data-testid="stButton"] button[kind="primary"]:hover,
+[data-testid="stMain"] [data-testid="stBaseButton-primary"]:hover{
+  background:#006f62!important;border-color:#006f62!important;
+}
+[data-testid="stMain"] [data-testid="stButton"] button[kind="primary"] p{
+  color:#fff!important;
+}
+
+[data-testid="stExpander"]{border-color:#d0e1d7!important;border-radius:11px}
+[data-testid="stDataFrame"]{border:1px solid #cfdfd9;border-radius:9px}
 [data-testid="stMain"] [data-testid="stButton"] button:hover,
 [data-testid="stMain"] [data-testid="stLinkButton"] a:hover{
-  border-color:#ec9b52!important;
+  border-color:#008878!important;
 }
 input:focus-visible,button:focus-visible{
-  outline-color:#df9146!important;
+  outline-color:#008878!important;
 }
 .tiny{font-size:12px;color:#758274}
 .notes{
