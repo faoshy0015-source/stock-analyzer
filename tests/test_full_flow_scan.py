@@ -161,3 +161,59 @@ def test_no_holiday_fake_trading_date_passes():
     mock = FakeStock()
     with pytest.raises(ScanDataError, match="거래일"):
         discover_sessions(mock, "2026-11-08")
+
+
+def test_market_coverage_95_percent_can_be_screened_without_filling_missing_rows():
+    # A real screenshot showed 852/891=95.6% but an arbitrary 98% gate
+    # aborted before any symbol could be checked.
+    universe = tuple(f"{n:06d}" for n in range(100))
+    quotes, feeds = market_tables(tickers=universe)
+    feeds["기관합계"] = feeds["기관합계"].iloc[:95]
+    panel, quality = assemble_daily_snapshot(
+        "2026-11-09", "KOSPI", quotes, feeds, min_coverage=0.90)
+    assert quality["investor_coverage"]["기관합계"] == 0.95
+    assert quality["aligned_tickers"] == 95
+    assert panel["institution_qty"].isna().sum() == 5
+
+
+def test_low_ranked_response_still_fails_under_ninety_percent():
+    universe = tuple(f"{n:06d}" for n in range(100))
+    quotes, feeds = market_tables(tickers=universe)
+    feeds["기관합계"] = feeds["기관합계"].iloc[:85]
+    with pytest.raises(ScanDataError, match="커버리지"):
+        assemble_daily_snapshot(
+            "2026-11-09", "KOSPI", quotes, feeds, min_coverage=0.90)
+
+
+def test_eligible_count_excludes_any_stock_with_missing_required_session():
+    complete, dates = synthetic_panel()
+    partial = complete.copy()
+    partial["code"] = "000001"
+    partial["name"] = "불완비 종목"
+    partial.loc[partial["date"] == dates[-4], "personal_qty"] = float("nan")
+    together = pd.concat([complete, partial], ignore_index=True)
+    matches, counts = evaluate_market_panel(together, dates, lookback=10)
+    assert counts["scanned_tickers"] == 2
+    assert counts["eligible_tickers"] == 1
+    assert counts["excluded_incomplete_tickers"] == 1
+    assert counts["eligible_ratio"] == 0.5
+    assert len(matches) == 1
+    assert matches[0]["code"] == "005930"
+
+
+def test_missing_old_session_not_in_10_day_window_does_not_block_signal():
+    panel, dates = synthetic_panel()
+    # More remote missing data should not disqualify the exact last 10 days.
+    old_date = dates[-19]
+    panel = panel.loc[panel["date"] != old_date]
+    signal = evaluate_stock_rows(panel, dates, lookback=10)
+    assert signal is not None
+    assert signal["first_day"] is True
+
+
+def test_streak_breaks_on_missing_older_calendar_session():
+    panel, dates = synthetic_panel(24, continuous=3)
+    # Today's reversal and previous day are present; 2 days ago is missing.
+    panel = panel[panel["date"] != dates[-3]]
+    # 10-day signal must fail because date itself is required, never fabricate.
+    assert evaluate_stock_rows(panel, dates, lookback=10) is None
