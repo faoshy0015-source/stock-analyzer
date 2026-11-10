@@ -419,3 +419,53 @@ KRX 회원 인증정보가 등록돼 있어도, `from pykrx import stock` 초기
 
 한국투자증권 공식 예제:
 https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domestic_stock/investor_trade_by_stock_daily
+
+## Analyze 메뉴 · 관리자 전용 목록·캐시 도구
+
+메인 페이지 파일 `app.py`를 그대로 유지하면서 Streamlit의 자동 페이지
+네비게이션을 비활성화하고 공통 메뉴로 표시합니다.
+
+- **Analyze** → 종목 기본 분석
+- **전종목 수급 레이더** → 확인 가능한 종목의 수급 전환 검색
+- **수급 전환 검색** → KRX 상위 후보의 심층 검색
+
+기존 Streamlit Cloud의 진입 파일(`app.py`)을 변경할 필요가 없습니다.
+`client.showSidebarNavigation = false`와 `st.page_link`를 함께
+사용하므로 각 페이지에는 동일한 메뉴가 나타납니다.
+
+### 관리자 전용 (APP_PASSWORD와 구분)
+
+Stock Analyzer → Streamlit Cloud → **App settings → Secrets**에 다음
+서버 비밀 설정을 추가하세요. 실제 비밀번호는 파일·채팅·GitHub에
+공유하지 마세요.
+
+```toml
+APP_PASSWORD = "이미 설정된 일반 로그인 비밀번호"
+ADMIN_PASSWORD = "별도로 정한 관리자 비밀번호"
+```
+
+기존 `APP_PASSWORD`를 변경할 필요는 없으며, **`ADMIN_PASSWORD`는
+서로 다른 값**을 권장합니다. 해당 설정이 없으면 관리 도구는 실행되지
+않습니다.
+
+종목 분석 페이지 왼쪽의 **🔐 관리자 도구**에 관리자 비밀번호를
+입력하면 다음 버튼을 15분 동안 사용할 수 있습니다.
+
+1. KRX 전체 종목 목록 불러오기
+2. DART 상장사 목록 불러오기 (DART API 인증키가 있을 때)
+3. 새로고침 (캐시 초기화)
+
+일반 사용자에게는 비밀번호 입력창만 표시됩니다.
+잘못된 시도가 5회 누적되면 5분간 입력을 차단하며, 비밀번호가
+Secrets에서 변경되거나 인증 시간이 만료되면 자동으로 잠깁니다.
+**캐시 초기화는 서버의 모든 접속자에게 영향을 줄 수 있으므로**
+관리자만 실행하도록 제한합니다.
+
+### Sharing과의 차이
+
+현재 ETF Finder는 Streamlit **Private**, Stock Analyzer는 **Public**
+앱으로 운영되고 있습니다. Public 앱의 Sharing에 이메일을 초대해도
+다른 방문자의 접근을 제한하는 것은 아닙니다. 이 변경은
+**앱 내부 관리 기능만 잠그는 것**이며, 이메일 기반 뷰어 허용목록을
+구현한 것은 아닙니다. Stock Analyzer 공개 URL은 기존처럼 앱 비밀번호
+로그인 화면을 열 수 있습니다.

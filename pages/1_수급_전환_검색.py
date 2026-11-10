@@ -9,11 +9,13 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from access_gate import require_login
+from app_navigation import render_navigation
 from flow_reversal import assess_reversal, load_candidates, load_stock_history
 
 st.set_page_config(page_title="수급 전환 검색 · Stock Analyzer", page_icon="🔄",
                    layout="wide")
 require_login(st)
+render_navigation(st)
 
 from krx_auth import configure_streamlit_krx
 KRX_LOGIN_READY = configure_streamlit_krx(st)
