@@ -12,6 +12,8 @@ from access_gate import require_login
 from full_flow_scan import ScanDataError, run_full_scan
 from flow_scan_delivery import already_notified, persist_scan, read_latest_scan
 from flow_reversal import load_stock_history
+from data_sources import get_kis_access_token
+from kis_investor_source import KisInvestorError, fetch_kis_investor_history
 
 st.set_page_config(page_title="전종목 수급 레이더 · Stock Analyzer", page_icon="📡",
                    layout="wide")
@@ -192,6 +194,84 @@ with st.expander("검색 조건 및 수동 실행", expanded=report is None):
             "과거 투자자별 수급 자료 누락으로 중단될 수 있습니다. "
             "전종목 수급 결과를 임의로 0건으로 만들지 않습니다."
         )
+        if "라이브러리 초기화 실패" in last_error:
+            st.info(
+                "현재는 시장별 수급 검증 이전에 pykrx 초기화에서 중단됩니다. "
+                "아래 'KRX 연결 장애 시 대체 확인 · KIS 투자자별 일별 수급'에서 "
+                "KRX와 독립된 공식 API 응답을 한 종목부터 확인할 수 있습니다."
+            )
+
+# KIS is a separate, authorized brokerage data source. This quick one-stock
+# probe never calls pykrx and does not claim complete market-wide coverage.
+with st.expander("KRX 연결 장애 시 대체 확인 · KIS 투자자별 일별 수급 (1종목)", expanded=False):
+    st.caption(
+        "한국투자증권 KIS 공식 API의 종목별 투자자매매동향(일별) 조회입니다. "
+        "이 경로는 pykrx를 사용하지 않습니다. 기존 Streamlit KIS_APP_KEY, "
+        "KIS_APP_SECRET을 서버에서만 읽으며, 계좌 주문은 실행하지 않습니다."
+    )
+    with st.form("kis_investor_probe"):
+        kis_probe_code = st.text_input(
+            "확인할 종목코드", value="005930", max_chars=6,
+            help="삼성전자 005930 등 국내 6자리 종목코드")
+        probe_submit = st.form_submit_button(
+            "KIS 종목별 수급 연결 확인", use_container_width=True)
+    if probe_submit:
+        try:
+            kis_probe_key = str(st.secrets.get("KIS_APP_KEY", "") or "").strip()
+            kis_probe_secret = str(st.secrets.get("KIS_APP_SECRET", "") or "").strip()
+            if not kis_probe_key or not kis_probe_secret:
+                raise KisInvestorError(
+                    "Streamlit Secrets의 KIS_APP_KEY·KIS_APP_SECRET 설정이 필요합니다."
+                )
+            with st.spinner("KIS 일별 투자주체별 수급 응답 확인 중"):
+                kis_probe_token = get_kis_access_token(
+                    kis_probe_key, kis_probe_secret)
+                if not kis_probe_token:
+                    raise KisInvestorError(
+                        "KIS 접근 토큰을 발급하지 못했습니다. KIS API 인증·권한을 확인하세요."
+                    )
+                result_kis = fetch_kis_investor_history(
+                    kis_probe_code, selected_day,
+                    kis_probe_key, kis_probe_secret, kis_probe_token)
+            st.session_state["kis_investor_probe"] = {
+                "code": kis_probe_code, "asof": str(selected_day),
+                "data": result_kis, "error": None}
+        except KisInvestorError as exc:
+            st.session_state["kis_investor_probe"] = {
+                "code": kis_probe_code, "asof": str(selected_day),
+                "data": pd.DataFrame(), "error": str(exc)}
+        except Exception as exc:
+            st.session_state["kis_investor_probe"] = {
+                "code": kis_probe_code, "asof": str(selected_day),
+                "data": pd.DataFrame(),
+                "error": "예상하지 못한 연결 오류: " + type(exc).__name__}
+    kis_probe = st.session_state.get("kis_investor_probe")
+    if kis_probe:
+        if kis_probe["error"]:
+            st.warning(kis_probe["error"])
+        else:
+            kis_df = kis_probe["data"]
+            latest = kis_df.index[-1].date().isoformat()
+            st.success(
+                f"KIS 별도 데이터 경로 응답 확인 · "
+                f"종목 {kis_probe['code']} · {len(kis_df)}거래일 · 최신 {latest}"
+            )
+            if latest != kis_probe["asof"]:
+                st.warning(
+                    f"요청 기준일 {kis_probe['asof']}과 실제 수급 최신일 {latest}이 "
+                    "다릅니다. 오래된 자료를 당일 수급 신호로 해석하지 마세요."
+                )
+            view = kis_df.reset_index().rename(columns={
+                "index": "거래일"})
+            if "거래일" not in view.columns:
+                view = view.rename(columns={view.columns[0]: "거래일"})
+            st.dataframe(view, hide_index=True, use_container_width=True)
+            st.caption(
+                "KIS 응답의 개인·외국인·기관 **일별 순매수 수량(주)**만 표시합니다. "
+                "순매수 거래대금이나 전종목 커버리지는 확인하지 않았습니다. "
+                "수급 전환 종목 스크리닝 및 대외 배포에 쓰려면 데이터 범위와 이용 권한을 "
+                "추가로 검증해야 합니다."
+            )
 
 if report:
     st.divider()

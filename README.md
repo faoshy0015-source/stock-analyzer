@@ -387,3 +387,30 @@ ETF Finder의 간결한 로그인 구성을 적용하되, 앱 브랜드는 독�
 - **기본 배경:** 밝은 민트/오프화이트 `#F4F8F7`
 - **포인트 색상:** 오렌지 `#E87D31` (강조·위험·비교용만)
 - 로그인 화면, 기본 Streamlit 테마, 분석 대시보드 및 인쇄용 HTML 제안서에 동일한 우선순위를 사용합니다.
+
+### KRX pykrx 로그인/JSON 오류일 때: 독립 KIS 일별 수급 진단
+
+KRX 회원 인증정보가 등록돼 있어도, `from pykrx import stock` 초기화 시
+`requests.exceptions.JSONDecodeError`가 발생하면 **KRX 시장 전체 검색은 시작할 수 없습니다**.
+이는 90%/98% 커버리지 설정으로 해결되지 않습니다.
+
+- KRX Open API의 공식 일별 시세 서비스에는 개별 종목 개인/외국인/기관 순매수 데이터가
+  포함되지 않으므로, 기존 데이터 판정의 전제조건을 조용히 바꿔 대체하지 않습니다.
+- 앱의 **전종목 수급 레이더** 페이지에 **KRX 연결 장애 시 대체 확인 · KIS 투자자별 일별 수급 (1종목)**
+  화면을 추가했습니다.
+- 기존 Streamlit Secrets의 `KIS_APP_KEY`와 `KIS_APP_SECRET`로
+  한국투자증권 공식 **종목별 투자자매매동향(일별)** 조회 API
+  (`/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily`,
+  TR `FHPTJ04160001`)를 **사용자가 명시적으로 한 종목만** 조회합니다.
+- 응답에서 `stck_bsop_date`, `prsn_ntby_qty`, `frgn_ntby_qty`,
+  `orgn_ntby_qty`가 있는 일자만 반환하며 수량 단위는 **주**입니다.
+  요청 기준일과 실제 응답일이 다르면 경고합니다.
+- **KIS와 KRX의 투자자분류/시장범위가 동일하다고 가정하지 않습니다.**
+  금액을 수량×주가로 임의 생성하지 않고, 전종목 분석을 성공했다고 표시하지도 않습니다.
+- KIS API 접근 권한과 사용자/증권사 내부 이용규정을 확인한 뒤 후보 검색으로
+  확장할 수 있습니다. 유료 리포트나 계정 데이터를 수집하지 않습니다.
+- 장애 상황에서 KRX 서버가 세션을 거부하거나 비-JSON 페이지를 반환하면
+  무리하게 로그인 제약을 우회하지 않습니다.
+
+한국투자증권 공식 예제:
+https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domestic_stock/investor_trade_by_stock_daily
