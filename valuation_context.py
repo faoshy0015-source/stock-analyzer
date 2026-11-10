@@ -162,8 +162,15 @@ def fetch_valuation_context(code, market, history_years=5):
         return result
     try:
         from pykrx import stock
-    except ImportError:
-        result["errors"].append("pykrx 라이브러리 사용 불가")
+    except Exception as exc:
+        # pykrx can fetch/parse KRX endpoints during initialization. A
+        # JSONDecodeError here must be treated as missing supplemental
+        # valuation data, not a fatal Stock Analyzer app error.
+        result["errors"].append(
+            "KRX 투자지표 제공처 초기화 실패: "
+            + type(exc).__name__
+            + " (외부 응답·접속/인증 또는 라이브러리 호환성 확인 필요)"
+        )
         return result
 
     refdate = datetime.now(ZoneInfo("Asia/Seoul")).date()
