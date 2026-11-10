@@ -172,8 +172,9 @@ def secret(name):
     except Exception:return ''
 
 
-# Authenticate before rendering the dashboard or contacting external APIs.
-# Password is read only from Streamlit Secrets, never from GitHub files.
+# Verify Supabase-issued identity and exact approved-email membership before
+# rendering dashboard content or contacting any market-data provider.
+# The old APP_PASSWORD flag does not grant access.
 require_login(st)
 
 from krx_auth import configure_streamlit_krx
@@ -293,9 +294,6 @@ with st.sidebar:
             if diag.get('상태')=='정상':st.success(msg)
             else:st.warning(msg)
     st.divider()
-    if st.button('🔒 로그아웃', use_container_width=True):
-        st.session_state.pop('_hanav_stock_authenticated',None)
-        st.rerun()
     st.caption('• OpenDART·KIS 인증정보는 Streamlit Secrets에서 관리합니다.')
     st.caption('• 데이터는 실시간 체결 시세가 아닐 수 있습니다.')
     st.caption('• 투자 권유가 아닌 참고용 리서치 도구입니다.')
