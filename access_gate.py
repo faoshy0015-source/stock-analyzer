@@ -7,6 +7,7 @@ grant access after this change.
 from __future__ import annotations
 
 import time
+import hmac
 
 from email_auth import (
     EmailAuthError, LAST_SENT_KEY, PENDING_KEY, SESSION_KEY, clear_auth_state,
@@ -15,8 +16,36 @@ from email_auth import (
 )
 
 
+PASSWORD_PASSED_KEY = "_stock_verified_existing_app_password"
+LOGIN_PASSWORD_NAMES = (
+    "APP_PASSWORD", "APP_ACCESS_PASSWORD", "LOGIN_PASSWORD",
+    "ACCESS_PASSWORD", "PASSWORD", "APP_PASS", "APP_PW",
+    "STOCK_ANALYZER_PASSWORD", "ADMIN_PASSWORD",
+)
+
+
+def configured_password(secrets):
+    """Preserve the app's existing password as an *additional* access check."""
+    for name in LOGIN_PASSWORD_NAMES:
+        try:
+            value = secrets.get(name)
+        except Exception:
+            continue
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def verify_password(candidate, configured):
+    return (
+        isinstance(candidate, str) and isinstance(configured, str)
+        and bool(configured)
+        and hmac.compare_digest(candidate.encode("utf-8"), configured.encode("utf-8"))
+    )
+
+
 def require_login(st):
-    """Deny access unless Supabase confirms an allowlisted email on this rerun."""
+    """Deny access unless email is verified, approved and password is valid."""
     try:
         config = get_email_auth_config(st.secrets)
     except EmailAuthError as exc:
@@ -32,7 +61,9 @@ def require_login(st):
 
     # Explicitly disregard obsolete password-era authentication flags.
     st.session_state.pop("_hanav_stock_authenticated", None)
+    required_password = configured_password(st.secrets)
     saved = st.session_state.get(SESSION_KEY)
+    password_gate = False
     if saved:
         try:
             verified = validate_session(config, saved)
@@ -42,14 +73,18 @@ def require_login(st):
             return
         if verified is not None and is_approved(verified["email"], config):
             st.session_state[SESSION_KEY] = verified
-            with st.sidebar:
-                st.caption("🔐 승인 계정: " + verified["email"])
-                if st.button("🔒 로그아웃", key="stock_email_logout",
-                             use_container_width=True):
-                    clear_auth_state(st)
-                    st.rerun()
-            return
-        clear_auth_state(st)
+            if required_password and not st.session_state.get(PASSWORD_PASSED_KEY):
+                password_gate = True
+            else:
+                with st.sidebar:
+                    st.caption("🔐 승인 계정: " + verified["email"])
+                    if st.button("🔒 로그아웃", key="stock_email_logout",
+                                 use_container_width=True):
+                        clear_auth_state(st)
+                        st.rerun()
+                return
+        else:
+            clear_auth_state(st)
 
     st.markdown(
         """
@@ -143,7 +178,27 @@ def require_login(st):
         if pending and not is_approved(pending, config):
             st.session_state.pop(PENDING_KEY, None)
             pending = None
-        if not pending:
+        if password_gate:
+            st.caption(
+                "이메일 인증 완료: " + st.session_state[SESSION_KEY]["email"]
+                + " · 기존 앱 비밀번호를 입력해 주세요."
+            )
+            with st.form("stock_existing_password_second_factor", clear_on_submit=True):
+                password_candidate = st.text_input(
+                    "앱 비밀번호", type="password",
+                    placeholder="기존 Stock Analyzer 비밀번호",
+                    autocomplete="off",
+                )
+                password_submit = st.form_submit_button(
+                    "🔐 최종 로그인", type="primary", use_container_width=True,
+                )
+            if password_submit:
+                if verify_password(password_candidate, required_password):
+                    st.session_state[PASSWORD_PASSED_KEY] = True
+                    st.rerun()
+                else:
+                    st.error("앱 비밀번호가 일치하지 않습니다.")
+        elif not pending:
             with st.form("stock_email_otp_request", clear_on_submit=False):
                 email = st.text_input(
                     "승인된 이메일 주소",
