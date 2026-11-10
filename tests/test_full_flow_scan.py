@@ -106,10 +106,12 @@ def test_all_ticker_coverage_marketwise():
     assert quality["investor_coverage"]["개인"] == 1
 
 
-def test_rejects_rank_only_response_instead_of_claiming_full_market():
+def test_rank_only_response_retained_as_partial_with_explicit_missing_rows():
     quotes, tables = market_tables(missing=("외국인",))
-    with pytest.raises(ScanDataError, match="커버리지"):
-        assemble_daily_snapshot("2026-11-09", "KOSPI", quotes, tables)
+    frame, quality = assemble_daily_snapshot("2026-11-09", "KOSPI", quotes, tables)
+    assert quality["investor_coverage"]["외국인"] == round(1/3, 4)
+    assert quality["aligned_tickers"] == 1
+    assert frame["foreign_qty"].isna().sum() == 2
 
 
 def test_rejects_empty_source_instead_of_false_zero_signals():
@@ -154,7 +156,7 @@ def test_full_scan_uses_marketwide_batch_calls_and_returns_data():
     assert result["totals"]["scanned_tickers"] == 3
     assert result["totals"]["new_signals"] == 3
     assert result["coverage"]["min_investor_coverage"] == 1
-    assert len(mock.calls) == 22 * 4  # 22 exact KRX sessions × 4 batch endpoints
+    assert len(mock.calls) == 11 * 4  # requested 10 previous + asof, not 22 extraneous dates
 
 
 def test_no_holiday_fake_trading_date_passes():
@@ -217,3 +219,57 @@ def test_streak_breaks_on_missing_older_calendar_session():
     panel = panel[panel["date"] != dates[-3]]
     # 10-day signal must fail because date itself is required, never fabricate.
     assert evaluate_stock_rows(panel, dates, lookback=10) is None
+
+
+def test_oct21_partial_krx_day_at_889pct_does_not_abort_price_universe():
+    # Screenshot: KOSDAQ 2026-10-21 price universe 1,674,
+    # institution ranking response for 1,488 (88.9%).
+    universe = tuple(f"{n:06d}" for n in range(1674))
+    quotes, feeds = market_tables(tickers=universe)
+    feeds["기관합계"] = feeds["기관합계"].iloc[:1488]
+    daily, quality = assemble_daily_snapshot(
+        "2026-10-21", "KOSDAQ", quotes, feeds)
+    assert len(daily) == 1674
+    assert quality["aligned_tickers"] == 1488
+    assert quality["investor_coverage"]["기관합계"] == 0.8889
+    assert daily["institution_qty"].isna().sum() == 186
+    # Ranking omissions are not the same as zero institutional net buying.
+    assert daily["institution_qty"].isna().sum() != 0
+
+
+def test_date_aligned_market_scan_is_partial_not_failed_when_rankings_incomplete():
+    class PartiallyCoveredStock(FakeStock):
+        def get_market_net_purchases_of_equities(self, first, last, market, investor):
+            base = super().get_market_net_purchases_of_equities(first, last, market, investor)
+            if investor == "기관합계":
+                return base.iloc[:2]
+            return base
+    broker = PartiallyCoveredStock()
+    report = run_full_scan(
+        "2026-11-09", markets=("KOSPI",), lookback=10, stock_module=broker)
+    assert report["status"] == "partial"
+    assert report["totals"]["scanned_tickers"] == 3
+    assert report["totals"]["eligible_tickers"] == 2
+    assert report["totals"]["excluded_incomplete_tickers"] == 1
+    assert report["coverage"]["min_investor_coverage"] < 1.0
+    assert len(broker.calls) == 11 * 4
+
+
+def test_only_requested_sessions_are_required_for_20_day_scan():
+    broker = FakeStock()
+    report = run_full_scan(
+        "2026-11-09", markets=("KOSPI",), lookback=20, stock_module=broker)
+    assert report["status"] == "success"
+    assert len(broker.calls) == 21 * 4
+
+
+def test_date_outside_10_day_window_not_fetched_or_causes_abort():
+    class OldDayIncomplete(FakeStock):
+        def get_market_net_purchases_of_equities(self, first, last, market, investor):
+            assert first != self.sessions[-16].strftime("%Y%m%d")
+            return super().get_market_net_purchases_of_equities(
+                first, last, market, investor)
+    broker = OldDayIncomplete()
+    result = run_full_scan(
+        "2026-11-09", markets=("KOSPI",), lookback=10, stock_module=broker)
+    assert result["status"] == "success"
