@@ -113,5 +113,5 @@ def test_full_market_permanent_empty_reports_exact_failed_source():
     msg = str(ctx.value)
     assert "KOSPI" in msg
     assert "외국인" in msg
-    assert stock.sessions[-22].strftime("%Y-%m-%d") in msg
+    assert stock.sessions[-11].strftime("%Y-%m-%d") in msg
     assert "빈 응답" in msg
