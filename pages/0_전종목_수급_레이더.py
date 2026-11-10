@@ -53,8 +53,8 @@ def stock_history(code, day):
     return load_stock_history(code, day)
 
 
-st.title("📡 전종목 수급 전환 레이더")
-st.caption("KOSPI · KOSDAQ | 개인 순매수 지속 → 개인 이례적 순매도 + 외국인·기관 합산 순매수")
+st.title("📡 수급 전환 레이더")
+st.caption("KOSPI · KOSDAQ | 시장 전체에서 확인 가능한 종목만 판정 · 개인 대량 순매도 + 외국인·기관 합산 순매수")
 if not KRX_LOGIN_READY:
     st.warning(
         "KRX 회원 로그인 설정이 없습니다. 전종목 실제 조회는 인증정보 등록 전까지 실행할 수 없습니다. "
@@ -62,10 +62,11 @@ if not KRX_LOGIN_READY:
     )
 
 st.info(
-    "KRX 거래일별 전 종목 수급표와 가격 자료를 교차 검증합니다. "
-    "KRX 일별 투자주체별 수급표의 포함 종목 비율이 90% 미만이면 검색을 중단합니다. "
-    "90% 이상인 경우에도 누락된 종목은 제외하고 **직전 10/20거래일 수급이 모두 확인된 종목만** 판정합니다. "
-    "일부 누락 종목에서는 신호가 발생했을 수 있습니다. 장중 신호가 아닌 마감 기준(EOD) 검색입니다."
+    "KRX 투자자별 순매수 **순위형 원천자료는 일부 종목을 누락할 수 있습니다.** "
+    "일별 포함 비율이 90% 미만이라는 이유만으로 전체 검색을 중단하지 않습니다. "
+    "직전 10/20거래일과 기준일의 개인·외국인·기관 수량·금액이 "
+    "**모두 확인된 종목만** 판정하며, 미확인 종목은 0으로 채우지 않습니다. "
+    "검색 결과는 전종목 완전탐색이 아니며 마감 기준(EOD)입니다."
 )
 
 env = server_env()
@@ -156,7 +157,7 @@ with st.expander("검색 조건 및 수동 실행", expanded=report is None):
                 st.session_state.pop("marketwide_last_error", None)
                 report = run_full_scan(
                     str(selected_day), markets=tuple(markets), lookback=lookback,
-                    min_coverage=0.90, min_sell_multiple=sell_multiple,
+                    min_coverage=None, min_sell_multiple=sell_multiple,
                     min_personal_share=sell_share,
                     min_turnover=turnover * 100_000_000,
                     progress=_progress)
@@ -169,10 +170,15 @@ with st.expander("검색 조건 및 수동 실행", expanded=report is None):
                         latest_saved.clear()
                 except RuntimeError as exc:
                     st.warning("검색은 성공했으나 비공개 저장에 실패했습니다: " + str(exc))
-                status.update(label="수급 전환 검색 완료", state="complete")
+                status.update(
+                    label="확인 가능한 종목 검색 완료 · 일부 자료 미포함" if report.get("status") == "partial"
+                          else "수급 전환 검색 완료",
+                    state="complete")
                 st.success(
-                    "수급자료 기준일 검증 완료 · 데이터 커버리지 "
-                    + f"{report['coverage']['min_investor_coverage']:.1%}")
+                    f"수급 판정 가능한 종목 {report['totals']['eligible_tickers']:,}개 / "
+                    f"기준일 거래 종목 {report['totals']['scanned_tickers']:,}개. "
+                    "자료 누락 종목은 판정하지 않았습니다."
+                )
             except ScanDataError as exc:
                 status.update(label="전종목 검증 중단", state="error", expanded=True)
                 st.session_state["marketwide_last_error"] = (
@@ -275,7 +281,13 @@ with st.expander("KRX 연결 장애 시 대체 확인 · KIS 투자자별 일별
 
 if report:
     st.divider()
-    st.subheader("검색 결과 · " + report["asof"])
+    st.subheader("수급자료 확인 결과 · " + report["asof"])
+    if report.get("status") == "partial":
+        st.warning(
+            "전시장 가격 종목 중 일부는 투자자별 자료가 누락됐습니다. "
+            "**아래 결과는 자료를 모두 확인한 종목에 한정됩니다.** "
+            "미확인 종목에도 수급 전환이 있었을 수 있습니다."
+        )
     freshness = (pd.Timestamp(datetime.now(ZoneInfo("Asia/Seoul")).date())
                  - pd.Timestamp(report["asof"])).days
     if freshness > 2:
@@ -306,19 +318,19 @@ if report:
 
     with st.expander("데이터 검증 범위 및 기준", expanded=False):
         st.caption(
-            "한국거래소 KRX 일별 종목 시세·투자자별 순매수 상위종목 페이지 기반 pykrx. "
-            "일별 해당 시장에서 거래가 발생한 종목 대비 개인/외국인/기관 "
-            "수급표가 포함하는 종목의 비율을 검증하며, 기준은 90%입니다. "
-            "기간 내 단 하루라도 누락된 종목은 신호 계산에서 제외합니다. "
-            "따라서 전시장 100% 완전성·실시간성을 보장하지 않습니다."
+            "KRX 가격/거래량 기준일과 투자자별 순매수상위종목 자료를 교차 확인합니다. "
+            "종목별 당일 및 직전 선택 기간 중 하루라도 수급 수량·금액이 "
+            "누락되면 신호 계산에서 제외합니다. "
+            "일별 포함 비율은 정보 공개용이며 임의의 90% 일자 기준으로 전체 검색을 중단하지 않습니다. "
+            "전종목 100% 완전성·실시간성은 보장하지 않습니다."
         )
         checks = pd.DataFrame(report["coverage"]["per_day_market"])
         st.dataframe(checks, use_container_width=True, hide_index=True)
 
     if not report["results"]:
         st.info(
-            "수급 자료가 확인된 종목 중 이번 기준일의 선별 조건을 충족한 종목이 없습니다. "
-            "누락된 종목의 신호는 확인되지 않았으며 조건을 변경해 재검색할 수 있습니다."
+            "자료가 완비된 종목 중 이번 기준일의 선별 조건을 충족한 종목이 없습니다. "
+            "미확인 종목에 대해서는 신호 발생 여부를 판단할 수 없습니다."
         )
     else:
         e1, e2 = st.columns([1, 2])
