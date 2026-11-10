@@ -103,26 +103,23 @@ def test_credentials_are_not_trimmed_or_logged_on_verification():
     assert not verify_password(None,"abc")
 
 
-def test_login_ui_is_centered_and_green_but_password_stays_server_side():
+def test_login_ui_matches_etf_finder_green_first_style_and_does_not_leak_password():
     st=FakeStreamlit({"APP_PASSWORD":"do-not-leak"})
     with pytest.raises(Stopped):
         require_login(st)
     page="\n".join(st.markup)
-    assert "hanav-auth-hero" in page
-    assert "linear-gradient(122deg, #e8f6ed" in page
-    assert "border-left: 5px solid #e87d31" in page
-    assert "background: linear-gradient(100deg, #d7752b, #ed9c4e)" in page
-    assert "#07483f" not in page
-    assert 'data-testid="stForm"' in page
-    assert "Stock Analyzer" in page
-    assert "STOCK ANALYZER · SECURE ACCESS" in page
+    assert "hanav-login-brand" in page
+    assert 'class="hanav-login-title">Stock Analyzer' in page
+    assert "Private Investment Dashboard" in page
     assert "CREATED BY K.H.AHN" in page
-    assert '<div class="hanav-auth-logo">SA</div>' in page
-    assert "HANAV INVESTMENT INTELLIGENCE" not in page
-    assert "HANAV · PRIVATE RESEARCH WORKSPACE" not in page
+    assert "background:#008878!important" in page
+    assert "#e87d31 76%" in page  # tiny orange accent
+    assert "#f4f8f7" in page
+    assert "[data-testid=\"stForm\"]" in page
+    assert "hanav-auth-hero" not in page  # no oversized cream/orange hero
+    assert "background: linear-gradient(100deg, #d7752b" not in page
     assert "do-not-leak" not in page
     assert st.form_rendered
-
 
 def test_signed_in_session_does_not_emit_login_only_css():
     st=FakeStreamlit({"APP_PASSWORD":"secret"},authed=True)
