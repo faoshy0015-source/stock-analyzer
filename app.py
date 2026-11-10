@@ -23,6 +23,7 @@ from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH
 from flow_model import fetch_krx_turnover_context
 from consensus_targets import summarize_targets, naver_published_consensus
 from access_gate import require_login
+from provider_resilience import optional_fetch
 from score_table import render_score_table
 
 st.set_page_config(page_title='Stock Analyzer · K.H.AHN', page_icon='📊', layout='wide',
@@ -200,7 +201,7 @@ def cached_profile(symbol):return get_profile(symbol)
 @st.cache_data(ttl=43200,show_spinner=False)
 def cached_krx_valuation(code,market,key):return krx_company_marketcap(code,market,key)
 
-@st.cache_data(ttl=43200,show_spinner=False)
+@st.cache_data(ttl=1800,show_spinner=False)
 def cached_valuation_context(code,market):return fetch_valuation_context(code,market)
 
 @st.cache_data(ttl=3600,show_spinner=False)
@@ -321,10 +322,17 @@ if not resolved:
     st.warning('종목을 찾지 못했습니다. 6자리 종목코드를 입력하거나 왼쪽에서 종목 목록을 불러오세요.')
     st.stop()
 
+data_issues = []
 if api_key and dart_list.empty:
-    # Fetch once when the user starts analyzing a listed stock, no prior manual setup.
+    # DART catalogue is optional: a bad response may not prevent analysis
+    # of stocks that already have a verified fallback company code.
     with st.spinner('DART 기업코드 확인...'):
-        dart_list,dart_error=cached_corp_codes(api_key)
+        dart_list,dart_error=optional_fetch(
+            "DART 상장사 목록",
+            lambda: cached_corp_codes(api_key),
+            lambda: (pd.DataFrame(), "DART 기업코드 응답 없음"),
+            data_issues,
+        )
         st.session_state['dart_load_error']=dart_error
         if not dart_list.empty:st.session_state['dart_listing']=dart_list
 corp_code=DART_KNOWN_CORP_CODES.get(resolved['code'],'')
@@ -338,45 +346,97 @@ if not dart_list.empty:
 
 with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False) as status:
     st.write('주가 데이터 로드')
-    prices,symbol,price_source,price_error=cached_price(resolved['code'],resolved['market'])
-    profile=cached_profile(symbol) if symbol.endswith(('.KS','.KQ')) else {}
+    prices,symbol,price_source,price_error=optional_fetch(
+        "일별 주가",
+        lambda: cached_price(resolved['code'],resolved['market']),
+        lambda: (pd.DataFrame(),"","","시세 제공처 연결 실패"),
+        data_issues)
+    profile=optional_fetch(
+        "기업 기본정보",
+        lambda: cached_profile(symbol) if symbol.endswith(('.KS','.KQ')) else {},
+        dict, data_issues,
+        validator=lambda v: isinstance(v, dict))
     profile['__name__']=resolved['name']
     kis_snapshot={}
     if kis_key and kis_secret:
         st.write('KIS 현재가 REST 조회')
-        token=cached_kis_token(kis_key,kis_secret)
-        kis_snapshot=cached_kis_quote(resolved['code'],kis_key,kis_secret,token) if token else {}
+        token=optional_fetch(
+            "KIS 접근 토큰",
+            lambda: cached_kis_token(kis_key,kis_secret),
+            lambda: "", data_issues)
+        if token:
+            kis_snapshot=optional_fetch(
+                "KIS 현재가",
+                lambda: cached_kis_quote(resolved['code'],kis_key,kis_secret,token),
+                dict,data_issues)
     st.write('외국인·기관 수급 / 뉴스 로드')
-    flows,flow_error=cached_flow(resolved['code'])
-    daily_turnover,turnover_error=cached_turnover(resolved['code']) if not flows.empty else (pd.DataFrame(),"")
+    flows,flow_error=optional_fetch(
+        "KRX 투자자 수급",
+        lambda: cached_flow(resolved['code']),
+        lambda: (pd.DataFrame(),"KRX 수급 제공처 연결 실패"),
+        data_issues)
+    daily_turnover,turnover_error=optional_fetch(
+        "KRX 거래대금",
+        lambda: cached_turnover(resolved['code']) if not flows.empty else (pd.DataFrame(),""),
+        lambda: (pd.DataFrame(),"KRX 거래대금 제공처 연결 실패"),
+        data_issues)
     profile['__daily_turnover']=daily_turnover
-    news=cached_news(resolved['name'])
+    news=optional_fetch(
+        "뉴스",
+        lambda: cached_news(resolved['name']),
+        pd.DataFrame,data_issues)
     if api_key and corp_code:
         st.write('OpenDART 공시·재무제표 로드')
-        annual,quarterly,fs_scope=cached_fin(api_key,corp_code)
-        disclosures=cached_disclosures(api_key,corp_code)
+        annual,quarterly,fs_scope=optional_fetch(
+            "DART 재무제표",
+            lambda: cached_fin(api_key,corp_code),
+            lambda: (pd.DataFrame(),pd.DataFrame(),""),
+            data_issues)
+        disclosures=optional_fetch(
+            "DART 공시",
+            lambda: cached_disclosures(api_key,corp_code),
+            pd.DataFrame,data_issues)
     else:
         annual,quarterly,fs_scope,disclosures=pd.DataFrame(),pd.DataFrame(),'',pd.DataFrame()
     financial_detail={}
     if api_key and corp_code and not annual.empty and fs_scope in ('CFS','OFS'):
         st.write('DART 현금흐름·이자비용·유동비율 근거 조회')
         fy_year=str(annual.sort_values('period').iloc[-1]['period'])
-        financial_detail=cached_full_fy(api_key,corp_code,fy_year,fs_scope)
+        financial_detail=optional_fetch(
+            "DART 연간 상세 계정",
+            lambda: cached_full_fy(api_key,corp_code,fy_year,fs_scope),
+            dict,data_issues)
     profile['__financial_context']=financial_detail
     incomplete=bool(prices.empty or (api_key and annual.empty) or flows.empty)
     krx_cap={};krx_valuation_error=''
     if krx_key and (not positive(profile.get('trailingPE')) or
                     not positive(profile.get('priceToBook'))):
         st.write('KRX 시가총액 기반 밸류에이션 대체 조회')
-        krx_cap,krx_valuation_error=cached_krx_valuation(resolved['code'],resolved['market'],krx_key)
+        krx_cap,krx_valuation_error=optional_fetch(
+            "KRX 시가총액",
+            lambda: cached_krx_valuation(resolved['code'],resolved['market'],krx_key),
+            lambda: ({}, "KRX 시가총액 연결 실패"),
+            data_issues)
     profile=fill_valuation(profile,krx_cap,annual,kis_snapshot)
     st.write('업종 PER · 과거 5년 밴드 조회')
-    valuation_context=cached_valuation_context(resolved['code'],resolved['market'])
+    valuation_context=optional_fetch(
+        "KRX 업종 PER·PBR 및 과거 밴드",
+        lambda: cached_valuation_context(resolved['code'],resolved['market']),
+        lambda: {"source":"KRX", "errors":["KRX 업종 밸류에이션 연결 실패"]},
+        data_issues,
+        validator=lambda value: isinstance(value,dict))
     profile['__valuation_context']=valuation_context
     display_ratios=display_valuation_ratios(profile,valuation_context)
     incomplete=(incomplete or display_ratios['PER']['value'] is None or
                 display_ratios['PBR']['value'] is None)
-    status.update(label='데이터 확인 완료 · 일부 항목 미수신' if incomplete else '분석 데이터 준비 완료',state='complete',expanded=False)
+    source_errors=list(valuation_context.get('errors') or [])
+    data_issues.extend(
+        "KRX 밸류에이션: " + str(msg) for msg in source_errors
+    )
+    status.update(
+        label='일부 출처 미수신 · 사용 가능한 데이터로 분석' if (incomplete or data_issues)
+              else '분석 데이터 준비 완료',
+        state='complete',expanded=False)
 
 scores=evaluate(prices,annual,quarterly,flows,news,profile,disclosures)
 indicator=scores['indicators']
@@ -388,14 +448,21 @@ price_date=indicator.get('asof','확인 불가')
 # Each broker contributes no more than its most recent report within 90 days.
 # Quote date is explicit because Yahoo/FDR is not a live-stream current price.
 with st.spinner('최근 리포트 목표주가와 증권사별 표본 확인 중...'):
-    analyst_reports,analyst_error=cached_analyst_reports(resolved['code'],resolved['name'])
+    analyst_reports,analyst_error=optional_fetch(
+        "애널리스트 리포트",
+        lambda: cached_analyst_reports(resolved['code'],resolved['name']),
+        lambda: (pd.DataFrame(),"리포트 제공처 연결 실패"),
+        data_issues)
 quoted_price=kis_snapshot.get('price') if kis_snapshot else price
 quoted_date=(datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat()
              if kis_snapshot else price_date)
 target_summary=summarize_targets(analyst_reports,quoted_price,quoted_date)
 published_target={};published_target_error=''
 if target_summary['average'] is None:
-    published_target,published_target_error=cached_published_consensus(resolved['code'])
+    published_target,published_target_error=optional_fetch(
+        "목표주가 컨센서스",
+        lambda: cached_published_consensus(resolved['code']),
+        lambda: ({},"제공처 연결 실패"),data_issues)
     if published_target and target_summary.get('price'):
         published_target['upside_pct']=round(
             (published_target['target']/target_summary['price']-1)*100,2)
@@ -421,6 +488,13 @@ elif known_dart_fallback:
         st.warning('고유번호를 확인했지만 DART 재무·공시 응답이 없습니다. 왼쪽 「DART 연결 진단」을 열어 상세 원인을 확인하세요.')
 if flow_error:st.caption(f'참고: {flow_error}')
 if turnover_error:st.caption(f'참고: {turnover_error}')
+if krx_valuation_error:st.caption('KRX 시가총액 참고: ' + str(krx_valuation_error))
+if data_issues:
+    with st.expander(f'데이터 연결 상태 · {len(data_issues)}건 확인 필요', expanded=False):
+        st.warning('아래 출처는 정상 조회되지 않아 관련 지표를 미산출했습니다. '
+                   '확인된 다른 데이터는 계속 표시하지만 종합 점수의 충족률을 확인하세요.')
+        for issue in data_issues:
+            st.caption('• ' + issue)
 
 m1,m2,m3,m4=st.columns([1.1,1,1,1])
 m1.metric('KIS 조회 현재가' if kis_snapshot else '최근 확인 종가',
