@@ -25,6 +25,33 @@ class ScanDataError(RuntimeError):
     """A missing or incomplete KRX response must never mean 'no signals'."""
 
 
+def _krx_retry_call(fetch, *, market, day, dataset, attempts=3,
+                    backoff_seconds=0.8, sleep=time.sleep):
+    """Retry empty or transient KRX responses; always report the failed source.
+
+    Never substitute cached/stale dates or zeros for an unavailable dataset.
+    Do not include raw exception text, which may expose session URLs/tokens.
+    """
+    if attempts < 1:
+        raise ValueError("attempts must be positive")
+    last_issue = "빈 응답"
+    for attempt in range(1, attempts + 1):
+        try:
+            result = fetch()
+            if isinstance(result, pd.DataFrame) and not result.empty:
+                return result
+            last_issue = "빈 응답"
+        except Exception as exc:
+            last_issue = type(exc).__name__
+        if attempt < attempts:
+            sleep(backoff_seconds * attempt)
+    raise ScanDataError(
+        f"KRX 자료 수집 실패: {market} {pd.Timestamp(day).date()} / "
+        f"{dataset} / {attempts}회 시도 / 마지막 상태: {last_issue}. "
+        "KRX 일시적 제한·세션 만료·자료 미제공 여부를 확인하세요."
+    )
+
+
 def _tidy_tickers(frame, columns):
     if not isinstance(frame, pd.DataFrame) or frame.empty:
         raise ScanDataError("KRX 빈 응답")
@@ -105,16 +132,11 @@ def discover_sessions(stock, end_day, history_sessions=25):
     """Use actual KRX KOSPI index trading-session timestamps, not weekdays."""
     end = pd.Timestamp(end_day).normalize()
     start = end - pd.Timedelta(days=max(65, history_sessions * 2 + 15))
-    try:
-        index = stock.get_index_ohlcv_by_date(
-            start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), "1001")
-    except Exception as exc:
-        raise ScanDataError(
-            "KRX 거래일 조회 실패 (" + type(exc).__name__ + "): "
-            "회원 로그인 상태 또는 데이터 제공처 연결을 확인하세요"
-        ) from exc
-    if index is None or index.empty:
-        raise ScanDataError("KRX 코스피 지수 거래일 캘린더 조회 실패")
+    index = _krx_retry_call(
+        lambda: stock.get_index_ohlcv_by_date(
+            start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), "1001"),
+        market="KOSPI", day=end, dataset="거래일 지수 캘린더",
+    )
     sessions = pd.DatetimeIndex(pd.to_datetime(index.index, errors="coerce")).normalize()
     sessions = sessions[~sessions.isna()].unique().sort_values()
     if end not in sessions:
@@ -126,7 +148,8 @@ def discover_sessions(stock, end_day, history_sessions=25):
 
 def fetch_market_panels(
     day, markets=MARKETS, lookback=10, min_coverage=DEFAULT_COVERAGE,
-    per_call_delay=0.05, progress=None, stock_module=None,
+    per_call_delay=None, progress=None, stock_module=None,
+    fetch_attempts=3, retry_backoff_seconds=0.8,
 ):
     """Batch *all* stock rows by session/market, with coverage enforcement.
 
@@ -138,6 +161,12 @@ def fetch_market_panels(
     markets = tuple(markets)
     if not markets or any(m not in MARKETS for m in markets):
         raise ValueError("Select at least one supported market")
+    if per_call_delay is None:
+        # Pacing is needed for remote KRX, but synthetic/offline adapters
+        # should not spend seconds sleeping in deterministic test runs.
+        per_call_delay = 0.30 if stock_module is None else 0.0
+    if per_call_delay < 0:
+        raise ValueError("per_call_delay must not be negative")
     if stock_module is None:
         from krx_auth import krx_login_configured
         if not krx_login_configured():
@@ -156,21 +185,40 @@ def fetch_market_panels(
         for trading_day in dates:
             stamp = trading_day.strftime("%Y%m%d")
             try:
-                prices = stock_module.get_market_ohlcv_by_ticker(stamp, market=market)
+                prices = _krx_retry_call(
+                    lambda: stock_module.get_market_ohlcv_by_ticker(
+                        stamp, market=market),
+                    market=market, day=trading_day, dataset="전체종목 시세",
+                    attempts=fetch_attempts,
+                    backoff_seconds=retry_backoff_seconds,
+                )
                 investor_tables = {}
                 for investor in INVESTORS:
-                    investor_tables[investor] = stock_module.get_market_net_purchases_of_equities(
-                        stamp, stamp, market, investor)
                     if per_call_delay > 0:
                         time.sleep(per_call_delay)
+                    investor_tables[investor] = _krx_retry_call(
+                        lambda investor=investor:
+                            stock_module.get_market_net_purchases_of_equities(
+                                stamp, stamp, market, investor),
+                        market=market, day=trading_day,
+                        dataset=f"{investor} 순매수 수량·대금",
+                        attempts=fetch_attempts,
+                        backoff_seconds=retry_backoff_seconds,
+                    )
                 panel, summary = assemble_daily_snapshot(
                     trading_day, market, prices, investor_tables,
                     min_coverage=min_coverage)
-            except ScanDataError:
-                raise
+            except ScanDataError as exc:
+                # Include date and market for downstream field/schema failures too.
+                if f"{market} {trading_day.date()}" in str(exc):
+                    raise
+                raise ScanDataError(
+                    f"KRX 데이터 검증 중단: {market} {trading_day.date()} / "
+                    f"{str(exc)}"
+                ) from exc
             except Exception as exc:
                 raise ScanDataError(
-                    f"{market} {trading_day.date()} KRX 접속 실패: {type(exc).__name__}"
+                    f"{market} {trading_day.date()} KRX 처리 실패: {type(exc).__name__}"
                 ) from exc
             panels.append(panel)
             quality.append(summary)
