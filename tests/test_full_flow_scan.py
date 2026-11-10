@@ -273,3 +273,25 @@ def test_date_outside_10_day_window_not_fetched_or_causes_abort():
     result = run_full_scan(
         "2026-11-09", markets=("KOSPI",), lookback=10, stock_module=broker)
     assert result["status"] == "success"
+
+
+def test_no_eligible_stocks_is_data_failure_not_zero_signal():
+    class NoCommonFlowTicker(FakeStock):
+        def get_market_net_purchases_of_equities(self, first, last, market, investor):
+            table = super().get_market_net_purchases_of_equities(
+                first, last, market, investor)
+            choice = {"개인": 0, "외국인": 1, "기관합계": 2}[investor]
+            return table.iloc[[choice]]
+    feed = NoCommonFlowTicker()
+    with pytest.raises(ScanDataError, match="모두 확인된 종목이 0개"):
+        run_full_scan(
+            "2026-11-09", markets=("KOSPI",), lookback=10,
+            stock_module=feed)
+
+
+def test_missing_non_numeric_investor_data_is_not_counted_as_covered():
+    quotes, tables = market_tables()
+    tables["기관합계"].loc["000660", "순매수거래량"] = "미확인"
+    frame, q = assemble_daily_snapshot("2026-11-09", "KOSPI", quotes, tables)
+    assert frame["institution_qty"].isna().sum() == 1
+    assert q["aligned_tickers"] == 2
