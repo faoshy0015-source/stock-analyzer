@@ -175,8 +175,27 @@ def fetch_market_panels(
                 "KRX_ID, KRX_PW를 안전하게 등록하세요. "
                 "KRX_OPEN_API_KEY와는 별개입니다."
             )
-        from pykrx import stock as stock_module
-    dates = discover_sessions(stock_module, day, history_sessions=max(22, lookback + 4))
+        try:
+            from pykrx import stock as stock_module
+        except Exception as exc:
+            message = (
+                "KRX 라이브러리 초기화 실패 (pykrx): "
+                f"{type(exc).__name__}. "
+                "JSONDecodeError라면 KRX 서버가 JSON 대신 HTML·차단 안내·로그인 페이지를 "
+                "반환했을 가능성이 있습니다. KRX 계정의 실제 로그인 성공 여부, "
+                "요청 제한, pykrx 버전 및 Streamlit 서버 로그를 확인하세요."
+            )
+            raise ScanDataError(message) from exc
+    try:
+        dates = discover_sessions(
+            stock_module, day, history_sessions=max(22, lookback + 4))
+    except ScanDataError:
+        raise
+    except Exception as exc:
+        raise ScanDataError(
+            f"KRX 거래일 캘린더 처리 실패: {type(exc).__name__}. "
+            "시세 데이터 공급처 응답 형식을 확인하세요."
+        ) from exc
     panels = []
     quality = []
     total = len(dates) * len(markets)
@@ -375,10 +394,26 @@ def run_full_scan(
     day, markets=MARKETS, lookback=10, min_coverage=DEFAULT_COVERAGE,
     progress=None, stock_module=None, **kwargs
 ):
-    panel, quality, dates = fetch_market_panels(
-        day, markets=markets, lookback=lookback, min_coverage=min_coverage,
-        progress=progress, stock_module=stock_module)
-    hits, counts = evaluate_market_panel(panel, dates, lookback=lookback, **kwargs)
+    try:
+        panel, quality, dates = fetch_market_panels(
+            day, markets=markets, lookback=lookback, min_coverage=min_coverage,
+            progress=progress, stock_module=stock_module)
+    except ScanDataError:
+        raise
+    except Exception as exc:
+        raise ScanDataError(
+            "KRX 데이터 수집 단계 실패: " + type(exc).__name__
+            + ". JSONDecodeError인 경우 응답이 유효한 JSON인지, "
+            "KRX 서버 로그인/세션과 요청 제한을 확인하세요."
+        ) from exc
+    try:
+        hits, counts = evaluate_market_panel(
+            panel, dates, lookback=lookback, **kwargs)
+    except Exception as exc:
+        raise ScanDataError(
+            "KRX 종목별 수급 분석 단계 실패: " + type(exc).__name__
+            + ". 원천 자료의 열 구조와 결측값을 확인하세요."
+        ) from exc
     return {
         "status": "success",
         "asof": str(dates[-1].date()),
