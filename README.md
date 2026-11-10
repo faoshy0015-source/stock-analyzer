@@ -419,3 +419,74 @@ KRX 회원 인증정보가 등록돼 있어도, `from pykrx import stock` 초기
 
 한국투자증권 공식 예제:
 https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domestic_stock/investor_trade_by_stock_daily
+
+## 🔐 승인 이메일 전용 로그인 · 2026-11-10
+
+**보안 정책:** 이 앱의 모든 페이지(`app.py`, 수급 전환 검색, 수급 레이더)는
+**승인 목록에 있는 이메일 주소의 Supabase Auth OTP 검증이 완료돼야** 사용할 수 있습니다.
+기존 `APP_PASSWORD`·공유 비밀번호·`_hanav_stock_authenticated` 세션값으로는
+접속할 수 없습니다. 승인된 이메일도 코드를 직접 입력해 인증해야 하며,
+검증 이후에도 페이지를 열 때마다 Supabase Auth 서버에서 토큰/계정을 확인합니다.
+관리자가 승인 목록에서 주소를 삭제하면 다음 화면 실행 시 접근이 차단됩니다.
+
+### 설치 전 확인 (필수)
+
+**Streamlit Community Cloud의 비공개 앱 공유와 별개인 앱 내부 인증**입니다.
+현재 사용 중인 ETF Finder 비공개 앱의 설정을 변경하지 않습니다. Streamlit
+Community Cloud는 기본적으로 동시에 비공개 앱을 1개만 허용하기 때문에,
+이 앱이 Public URL로 배포되어 있더라도 로그인 후에만 데이터가 보이도록
+서버측 gate를 적용했습니다. 앱 주소/로그인 페이지만은 외부에서 접근할 수 있습니다.
+Private app 자체와 동일한 수준의 플랫폼 접근 차단을 제공하는 것은 아닙니다.
+
+1. **HanaV-Finder Supabase 프로젝트**에서 `Authentication → Providers → Email`
+   인증이 활성화됐는지 확인합니다.
+2. **이메일 발송 설정이 필수입니다.** Supabase 무료 기본 이메일 발송기는
+   **프로젝트 조직 멤버 주소로만** 보낼 수 있고 **시간당 2건**으로 제한됩니다.
+   외부 승인 사용자(네이버 등)에게 인증번호를 발송하려면
+   `Authentication → SMTP Settings`에서 **사용자 소유의 외부 SMTP 서비스**
+   (예: Resend, Brevo, SendGrid)를 설정해야 합니다.
+   SMTP 비밀번호는 GitHub 저장소에 넣지 마세요.
+3. `Authentication → Email Templates`의 **Magic Link/OTP** 템플릿을
+   **숫자 인증번호를 보내는 형식**으로 수정합니다. 기존
+   `{{ .ConfirmationURL }}` 링크 대신 이메일 본문에
+   `{{ .Token }}`을 표시해야 앱의 코드 입력 방식과 일치합니다.
+   초기 회원가입 확인을 위한 **Confirm signup** 템플릿도 확인하세요.
+   예시: `<p>Stock Analyzer 인증번호: <strong>{{ .Token }}</strong></p>`
+4. Streamlit Cloud → Stock Analyzer → **Settings → Secrets**에
+   기존 값을 유지하면서 다음 **서버 전용 설정을 추가**하세요:
+
+   ```toml
+   # 기존 SUPABASE_URL이 이 프로젝트를 향하는지 확인
+   SUPABASE_URL = "https://<project-ref>.supabase.co"
+   # Supabase Project Settings → API Keys의 공개용 anon 키
+   SUPABASE_ANON_KEY = "<supabase-anon-key>"
+   # 소유자 본인 이메일을 반드시 포함한 정확한 승인 주소들
+   APP_ALLOWED_EMAILS = ["owner@example.com", "viewer@naver.com"]
+   ```
+
+   위의 이메일·URL·키는 **예시입니다.** 승인 주소를 실제 본인 이메일과
+   직접 승인한 이용자 주소로 바꾸세요. 목록은 채팅이나 GitHub 코드에 게시하지 않고
+   Streamlit Secrets에서만 변경하세요. 인증용 키는
+   `SUPABASE_ANON_KEY`이며 `SUPABASE_SERVICE_ROLE_KEY`와 다릅니다.
+5. 앱을 새로고침해 승인 이메일 입력 → 이메일 OTP 수신 → 숫자 코드 검증으로 로그인합니다.
+   다른 브라우저/비인가 이메일로는 접근할 수 없는지 확인하세요.
+
+### 승인/철회
+
+- **추가:** `APP_ALLOWED_EMAILS` 배열에 이메일을 추가 → Secrets 저장
+- **철회:** 같은 배열에서 이메일 삭제 → Secrets 저장. 이미 로그인한 사람도
+  다음 앱 실행·페이지 이동·새로고침 시 서버측 목록을 다시 확인하므로 거부됩니다
+- **로그아웃:** 각 페이지 왼쪽 메뉴의 `🔒 로그아웃`.
+  이 버튼은 현재 세션의 인증/분석 데이터를 모두 지웁니다.
+- 목록이 비어 있거나 URL/anon 키가 잘못됐으면 **모든 접속을 차단**합니다.
+  인증 완료 전 주가/API/사용자 데이터가 표시되지 않습니다.
+- **참고:** Supabase Auth 기본 메일 발송 제한, SMTP 제공자의 설정,
+  비공개 URL 여부는 별도로 확인해야 합니다.
+  이 기능이 준비되기 전에는 기존 APP_PASSWORD만으로 접속할 수 없으므로
+  **설정을 완료하지 않으면 관리자를 포함한 모두가 잠깁니다.**
+
+공식 자료:
+- https://docs.streamlit.io/deploy/streamlit-community-cloud/share-your-app
+- https://supabase.com/docs/guides/auth/auth-email-passwordless
+- https://supabase.com/docs/guides/auth/auth-email-templates
+- https://supabase.com/docs/guides/auth/auth-smtp
