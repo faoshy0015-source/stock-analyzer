@@ -148,7 +148,7 @@ def discover_sessions(stock, end_day, history_sessions=25):
 
 def fetch_market_panels(
     day, markets=MARKETS, lookback=10, min_coverage=DEFAULT_COVERAGE,
-    per_call_delay=0.30, progress=None, stock_module=None,
+    per_call_delay=None, progress=None, stock_module=None,
     fetch_attempts=3, retry_backoff_seconds=0.8,
 ):
     """Batch *all* stock rows by session/market, with coverage enforcement.
@@ -161,6 +161,12 @@ def fetch_market_panels(
     markets = tuple(markets)
     if not markets or any(m not in MARKETS for m in markets):
         raise ValueError("Select at least one supported market")
+    if per_call_delay is None:
+        # Pacing is needed for remote KRX, but synthetic/offline adapters
+        # should not spend seconds sleeping in deterministic test runs.
+        per_call_delay = 0.30 if stock_module is None else 0.0
+    if per_call_delay < 0:
+        raise ValueError("per_call_delay must not be negative")
     if stock_module is None:
         from krx_auth import krx_login_configured
         if not krx_login_configured():
