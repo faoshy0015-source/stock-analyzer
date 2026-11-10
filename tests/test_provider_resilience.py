@@ -78,7 +78,6 @@ def test_app_reports_missing_valuation_instead_of_crashing():
     assert "데이터 연결 상태 · {len(data_issues)}건 확인 필요" in source
     assert "profile['__valuation_context']=valuation_context" in source
     assert "display_ratios=display_valuation_ratios(profile,valuation_context)" in source
-    assert "해당 항목" not in source or True
 
 
 def test_valuation_cache_ttl_does_not_keep_short_outages_for_half_day():
