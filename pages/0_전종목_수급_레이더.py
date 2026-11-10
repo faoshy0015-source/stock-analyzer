@@ -194,6 +194,12 @@ with st.expander("검색 조건 및 수동 실행", expanded=report is None):
             "과거 투자자별 수급 자료 누락으로 중단될 수 있습니다. "
             "전종목 수급 결과를 임의로 0건으로 만들지 않습니다."
         )
+        if "라이브러리 초기화 실패" in last_error:
+            st.info(
+                "현재는 시장별 수급 검증 이전에 pykrx 초기화에서 중단됩니다. "
+                "아래 'KRX 연결 장애 시 대체 확인 · KIS 투자자별 일별 수급'에서 "
+                "KRX와 독립된 공식 API 응답을 한 종목부터 확인할 수 있습니다."
+            )
 
 # KIS is a separate, authorized brokerage data source. This quick one-stock
 # probe never calls pykrx and does not claim complete market-wide coverage.
