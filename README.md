@@ -50,7 +50,8 @@ Supabase **email OTP 발송 설정(SMTP + 인증번호 템플릿)**이 추가로
 
 - Stock Analyzer는 **승인 목록에 등록된 이메일 주소로만** 인증번호를 발송합니다.
 - **인증번호 검증 + Supabase 서버의 사용자 신원 확인** 후에만 종목 검색이 가능합니다.
-- 기존 `APP_PASSWORD` 또는 `ADMIN_PASSWORD`만으로 로그인할 수 없습니다.
+- **기존 `APP_PASSWORD`가 설정돼 있으면, 이메일 인증 후 기존 비밀번호도 입력해야 합니다.**
+  기존 비밀번호만으로는 로그인할 수 없습니다. 설정된 비밀번호가 없다면 이메일 인증만 필수입니다.
 - 승인 주소 목록·Supabase anon 키·SMTP 설정이 없으면 **관리자도 앱에 접속할 수 없습니다**.
 - 추가/철회: `APP_ALLOWED_EMAILS`에 이메일을 추가하거나 삭제하고 저장합니다.
 - 이 설정은 ETF Finder의 Streamlit Private 앱 Sharing 설정을 변경하지 않습니다.
@@ -426,8 +427,9 @@ https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domes
 
 **보안 정책:** 이 앱의 모든 페이지(`app.py`, 수급 전환 검색, 수급 레이더)는
 **승인 목록에 있는 이메일 주소의 Supabase Auth OTP 검증이 완료돼야** 사용할 수 있습니다.
-기존 `APP_PASSWORD`·공유 비밀번호·`_hanav_stock_authenticated` 세션값으로는
+기존 `APP_PASSWORD`·공유 비밀번호·`_hanav_stock_authenticated` 세션값만으로는
 접속할 수 없습니다. 승인된 이메일도 코드를 직접 입력해 인증해야 하며,
+기존 `APP_PASSWORD`가 설정된 앱은 **OTP 인증 후 기존 비밀번호 입력까지 요구**합니다.
 검증 이후에도 페이지를 열 때마다 Supabase Auth 서버에서 토큰/계정을 확인합니다.
 관리자가 승인 목록에서 주소를 삭제하면 다음 화면 실행 시 접근이 차단됩니다.
 
@@ -470,7 +472,8 @@ Private app 자체와 동일한 수준의 플랫폼 접근 차단을 제공하�
    직접 승인한 이용자 주소로 바꾸세요. 목록은 채팅이나 GitHub 코드에 게시하지 않고
    Streamlit Secrets에서만 변경하세요. 인증용 키는
    `SUPABASE_ANON_KEY`이며 `SUPABASE_SERVICE_ROLE_KEY`와 다릅니다.
-5. 앱을 새로고침해 승인 이메일 입력 → 이메일 OTP 수신 → 숫자 코드 검증으로 로그인합니다.
+5. 앱을 새로고침해 승인 이메일 입력 → 이메일 OTP 수신 → 숫자 코드 검증 →
+   (기존 APP_PASSWORD 설정 시) 앱 비밀번호 입력으로 로그인합니다.
    다른 브라우저/비인가 이메일로는 접근할 수 없는지 확인하세요.
 
 ### 승인/철회
