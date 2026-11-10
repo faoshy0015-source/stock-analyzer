@@ -102,23 +102,23 @@ def render_html(instrument, result, narrative, price, stamp, sources,
     <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
     <title>{safe(instrument.get('name','종목 미확인'))} | Stock Analyzer 리서치 제안서</title>
     <style>
-    :root{{--ink:#30463d;--teal:#138c78;--orange:#e87d31;--border:#e9d9c6}}
+    :root{{--ink:#203d35;--teal:#008878;--orange:#e87d31;--border:#cfdfd9}}
     *{{box-sizing:border-box}}
-    body{{margin:0;color:var(--ink);background:#fffaf3;
+    body{{margin:0;color:var(--ink);background:#f4f8f7;
       font-family:"Noto Sans KR","Malgun Gothic",Arial,sans-serif}}
-    main{{max-width:920px;margin:24px auto;background:#fffefa;
+    main{{max-width:920px;margin:24px auto;background:#ffffff;
       padding:30px 34px 26px;border:1px solid var(--border);border-radius:16px}}
     h1{{font-size:30px;margin:6px 0 8px;color:#285845;letter-spacing:-.6px}}
     h2{{font-size:18px;color:#315746;margin:20px 0 10px;border-left:4px solid var(--orange);
       padding-left:11px;break-after:avoid}}
     h3{{font-size:14px;margin:3px 0 9px;color:#315746}}
-    header{{padding:20px 23px;background:linear-gradient(112deg,#fff0d7,#e9f7ef);
-      border:1px solid var(--border);border-left:5px solid var(--orange);border-radius:12px}}
+    header{{padding:20px 23px;background:linear-gradient(112deg,#dcefe6,#f8fcfa);
+      border:1px solid var(--border);border-left:5px solid var(--teal);border-radius:12px}}
     .eyebrow{{font-size:10px;font-weight:800;letter-spacing:1.8px;color:#b86a2f}}
     .fine,.source{{font-size:11px;color:#687b6e;line-height:1.65}}
     .source{{margin-top:9px}}
     .kpi-row{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:15px 0 7px}}
-    .kpi-row .metric{{background:#fff8ec;border:1px solid var(--border);
+    .kpi-row .metric{{background:#f3faf6;border:1px solid var(--border);
       padding:12px 13px;border-radius:10px;min-width:0}}
     .metric small{{display:block;color:#6d7d6f;font-size:11px;margin-bottom:6px}}
     .metric strong{{font-size:22px;color:#376451;letter-spacing:-.5px;display:block;
@@ -140,7 +140,7 @@ def render_html(instrument, result, narrative, price, stamp, sources,
     table{{border-collapse:collapse;width:100%;font-size:11px;table-layout:fixed}}
     th,td{{padding:8px 6px;border-bottom:1px solid #eae0d1;vertical-align:top;
       overflow-wrap:anywhere;word-break:keep-all}}
-    thead th{{background:#fff0db;color:#385e4c;text-align:left}}
+    thead th{{background:#e3f1eb;color:#385e4c;text-align:left}}
     .num{{text-align:center;white-space:nowrap}}
     .hint{{color:#a76c38}}
     .unavailable{{background:#f6f3ee;padding:11px 13px;border-radius:8px;
@@ -184,7 +184,7 @@ def render_html(instrument, result, narrative, price, stamp, sources,
 
     <h2>최근 주가 추이와 기술적 기준</h2>
     <div class="graph">{price_chart_svg(prices)}</div>
-    <p class="legend"><span class="swatch" style="background:#138c78"></span>종가
+    <p class="legend"><span class="swatch" style="background:#008878"></span>종가
       &nbsp; <span class="swatch" style="background:#e87d31"></span>20일 이동평균
       &nbsp; <span class="swatch" style="background:#839e68"></span>60일 이동평균
       &nbsp; · {tech_context}</p>
