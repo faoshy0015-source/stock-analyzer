@@ -53,7 +53,7 @@ def parse_approved_emails(value):
         address = normal_email(candidate)
         if not address:
             continue
-        if len(address) > 254 or not _EMAIL.fullmatch(address):
+        if len(address) > 254 or "*" in address or not _EMAIL.fullmatch(address):
             raise EmailAuthError(
                 "APP_ALLOWED_EMAILS에는 구체적인 이메일 주소만 등록하세요. "
                 "와일드카드·도메인 전체 허용은 지원하지 않습니다."
@@ -193,8 +193,8 @@ def get_auth_user(config, access_token, *, session=None):
     email = normal_email(user.get("email"))
     if not email or not isinstance(user.get("id"), str):
         raise EmailAuthError("인증 서버가 사용자 정보를 반환하지 않았습니다.")
-    if not is_approved(email, config):
-        return None
+    # Return the verified identity even if no longer approved so that
+    # validate_session can revoke immediately, without attempting refresh.
     return {"id": user["id"], "email": email}
 
 
@@ -233,7 +233,7 @@ def validate_session(config, stored, *, session=None):
             access = renewed["access_token"]
             refresh = renewed["refresh_token"]
             identity = get_auth_user(config, access, session=session)
-    if identity is None:
+    if identity is None or not is_approved(identity["email"], config):
         return None
     return {
         "access_token": access,
