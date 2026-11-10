@@ -19,16 +19,17 @@ def test_main_header_is_bright_and_independent():
     assert "#102942" not in source
 
 
-def test_metric_tab_and_sidebar_use_warm_palette():
+def test_metric_tab_and_sidebar_use_green_first_palette():
     source=(ROOT / "app.py").read_text(encoding="utf-8")
     assert "[data-testid=\"stMetric\"]" in source
     assert "border-top:3px solid #008878" in source
     assert "background:#dcefe6!important" in source
     assert "background:linear-gradient(175deg,#edf5f2" in source
-    assert "#008878" in source\n    assert "#e87d31" in source
+    assert "#008878" in source
+    assert "#e87d31" in source
 
 
-def test_exported_html_matches_light_warm_theme_and_author():
+def test_exported_html_matches_green_first_theme_and_author():
     report=render_html(
         {"name":"테스트","code":"005930"},
         {"rows":[],"total":60.0,"coverage":25,"label":"중립"},
@@ -37,6 +38,16 @@ def test_exported_html_matches_light_warm_theme_and_author():
     assert "CREATED BY K.H.AHN" in report
     assert "HanaV" not in report and "HANAV" not in report
     assert "background:#f4f8f7" in report
-    assert "border-left:4px solid var(--orange)" in report\n    assert "border-left:5px solid var(--teal)" in report
+    assert "border-left:4px solid var(--orange)" in report
+    assert "border-left:5px solid var(--teal)" in report
     assert "<title>테스트 | Stock Analyzer 리서치 제안서</title>" in report
-\n\ndef test_streamlit_theme_uses_green_primary_orange_as_accent():\n    config=(ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")\n    assert 'primaryColor = "#008878"' in config\n    assert 'backgroundColor = "#F4F8F7"' in config\n    source=(ROOT / "app.py").read_text(encoding="utf-8")\n    assert "--stock-teal:#008878" in source\n    assert "--stock-orange:#e87d31" in source\n    assert "background:#008878!important" in source\n
+
+
+def test_streamlit_theme_uses_green_primary_orange_as_accent():
+    config=(ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
+    assert 'primaryColor = "#008878"' in config
+    assert 'backgroundColor = "#F4F8F7"' in config
+    source=(ROOT / "app.py").read_text(encoding="utf-8")
+    assert "--stock-teal:#008878" in source
+    assert "--stock-orange:#e87d31" in source
+    assert "background:#008878!important" in source
