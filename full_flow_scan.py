@@ -1,8 +1,8 @@
-"""Exchange-wide, exact-session investor-flow reversal screening.
+"""KRX session-aligned investor-flow reversal screening with partial coverage.
 
-KRX ranking tables are never assumed to be complete: we compare their ticker
-coverage against that date's positive-volume KRX OHLCV universe. Missing
-coverage causes an explicit failure instead of an apparently empty result.
+KRX 'top net purchase' tables are not necessarily complete stock lists.
+Never replace missing investor feeds with zero, interpolate missing sessions,
+or call a partial screen an exhaustive all-stock scan.
 This module does not transmit or persist market data.
 """
 from __future__ import annotations
@@ -18,7 +18,10 @@ import pandas as pd
 MARKETS = ("KOSPI", "KOSDAQ")
 INVESTORS = {"개인": "personal", "외국인": "foreign", "기관합계": "institution"}
 REQUIRED_FLOW = ("순매수거래량", "순매수거래대금")
-DEFAULT_COVERAGE = 0.90  # Minimum daily response; excludes missing stocks from signals.
+# Optional strict per-day data gate for clients explicitly requesting it.
+# Default is audit-only: scan symbols with complete aligned history and disclose
+# both per-day source coverage and actual qualified-symbol coverage.
+DEFAULT_COVERAGE = None
 
 
 class ScanDataError(RuntimeError):
@@ -69,7 +72,7 @@ def _tidy_tickers(frame, columns):
 
 
 def assemble_daily_snapshot(day, market, prices, investor_tables, min_coverage=DEFAULT_COVERAGE):
-    """Validate universe completeness before producing an aligned daily panel."""
+    """Record source coverage; missing tickers stay null and cannot signal."""
     if market not in MARKETS:
         raise ValueError("unsupported market")
     quotes = _tidy_tickers(prices, ("종가", "거래량"))
@@ -95,15 +98,18 @@ def assemble_daily_snapshot(day, market, prices, investor_tables, min_coverage=D
         if investor not in investor_tables:
             raise ScanDataError(f"{market} {day}: {investor} 자료 누락")
         raw = _tidy_tickers(investor_tables[investor], REQUIRED_FLOW)
-        present = int(quotes.index.isin(raw.index).sum())
+        # A ticker listed in KRX ranking without numeric flow fields is still
+        # missing data, not a valid zero-net-flow ticker.
+        valid_rows = raw[raw[list(REQUIRED_FLOW)].notna().all(axis=1)]
+        present = int(quotes.index.isin(valid_rows.index).sum())
         ratio = present / universe
         coverages[investor] = round(ratio, 4)
-        if ratio < min_coverage:
+        if min_coverage is not None and ratio < min_coverage:
             raise ScanDataError(
                 f"{market} {day}: {investor} 자료의 종목 커버리지 "
                 f"{ratio:.1%} (필요 {min_coverage:.0%}, {present}/{universe}); "
                 "자료가 제한되거나 누락되어 시장 전체 검색 중단")
-        raw = raw.rename(columns={
+        raw = valid_rows.rename(columns={
             "순매수거래량": prefix + "_qty",
             "순매수거래대금": prefix + "_krw",
         })
@@ -151,10 +157,11 @@ def fetch_market_panels(
     per_call_delay=None, progress=None, stock_module=None,
     fetch_attempts=3, retry_backoff_seconds=0.8,
 ):
-    """Batch *all* stock rows by session/market, with coverage enforcement.
+    """Audit source rows by real trading session; screen only confirmed stocks.
 
-    KRX's ranking endpoint may expose only a top subset in some versions.
-    That is detected against the daily traded-ticker universe, not concealed.
+    Net-purchase rankings can omit tickers even when prices are present.
+    Partial source days are retained with nulls; only stocks having complete
+    data for every mandatory session are assessed.
     """
     if lookback not in (10, 20):
         raise ValueError("lookback must be 10 or 20")
@@ -188,7 +195,7 @@ def fetch_market_panels(
             raise ScanDataError(message) from exc
     try:
         dates = discover_sessions(
-            stock_module, day, history_sessions=max(22, lookback + 4))
+            stock_module, day, history_sessions=lookback + 1)
     except ScanDataError:
         raise
     except Exception as exc:
@@ -344,7 +351,7 @@ def evaluate_stock_rows(
 def evaluate_market_panel(panel, dates, lookback=10, **kwargs):
     """Screen all price-universe symbols; count only complete, aligned histories."""
     dates = pd.DatetimeIndex(dates)
-    if panel.empty or len(dates) < max(22, lookback + 4):
+    if panel.empty or len(dates) < lookback + 1:
         raise ScanDataError("필수 수급·가격 데이터가 부족합니다")
     if "market" not in panel or "code" not in panel:
         raise ScanDataError("종목 데이터 스키마 오류")
@@ -414,18 +421,26 @@ def run_full_scan(
             "KRX 종목별 수급 분석 단계 실패: " + type(exc).__name__
             + ". 원천 자료의 열 구조와 결측값을 확인하세요."
         ) from exc
+    if counts["eligible_tickers"] == 0:
+        raise ScanDataError(
+            "필수 거래일의 개인·외국인·기관 수급자료가 모두 확인된 종목이 "
+            "0개입니다. 결과를 '수급 전환 0건'으로 처리할 수 없어 검색을 중단합니다."
+        )
+    min_daily = min(
+        value for row in quality
+        for value in row["investor_coverage"].values()
+    )
+    is_partial = min_daily < 1 or counts["eligible_ratio"] < 1
     return {
-        "status": "success",
+        "status": "partial" if is_partial else "success",
         "asof": str(dates[-1].date()),
         "generated_kst": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
-        "method": "KRX market-wide daily ticker batch, completeness-gated",
+        "method": "KRX ranking-source partial-universe, exact-session stock eligibility",
         "settings": {"markets": list(markets), "lookback": lookback, **kwargs},
         "totals": counts,
         "coverage": {
             "per_day_market": quality,
-            "min_investor_coverage": min(
-                value for row in quality
-                for value in row["investor_coverage"].values()),
+            "min_investor_coverage": min_daily,
             "required_daily_coverage": min_coverage,
         },
         "results": hits,

@@ -63,7 +63,7 @@ class FlakyStock:
         self.sessions = pd.bdate_range(end="2026-11-09", periods=24)
         self.calls = []
         self.always_empty = always_empty
-        self.target_day = self.sessions[-22].strftime("%Y%m%d")
+        self.target_day = self.sessions[-11].strftime("%Y%m%d")
         self.flaky_calls = 0
 
     def get_index_ohlcv_by_date(self, first, last, code):
@@ -97,9 +97,9 @@ def test_full_market_retries_one_empty_investor_feed_without_losing_day():
         per_call_delay=0, retry_backoff_seconds=0,
         stock_module=stock)
     assert stock.flaky_calls == 2
-    assert len(quality) == 22
-    assert len(panel) == 66
-    assert len(dates) == 22
+    assert len(quality) == 11
+    assert len(panel) == 33
+    assert len(dates) == 11
 
 
 def test_full_market_permanent_empty_reports_exact_failed_source():
@@ -113,5 +113,5 @@ def test_full_market_permanent_empty_reports_exact_failed_source():
     msg = str(ctx.value)
     assert "KOSPI" in msg
     assert "외국인" in msg
-    assert stock.sessions[-22].strftime("%Y-%m-%d") in msg
+    assert stock.sessions[-11].strftime("%Y-%m-%d") in msg
     assert "빈 응답" in msg
