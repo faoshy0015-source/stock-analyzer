@@ -134,11 +134,12 @@ def alert_text(report, max_rows=8):
         "🔄 수급 전환 마감 검색 · " + report["asof"] + "\n"
         + "KRX 코스피·코스닥 | 신규 " + str(len(fresh))
         + "개 · 연속 " + str(len(continuation)) + "개\n"
-        + "전체 분석 대상 " + str(stats.get("scanned_tickers", 0)) + "개 종목\n"
+        + "수급자료 완비 " + str(stats.get("eligible_tickers", 0))
+        + "/" + str(stats.get("scanned_tickers", 0)) + "종목\n"
     )
     if not fresh:
         return title + "신규 전환 조건 충족 종목 없음\n" + (
-            "※ 집계 자료가 완전한 경우에만 발송한 결과입니다."
+            "※ 수급자료가 확인된 종목에서만 계산한 결과입니다."
         )
     lines = []
     for index, item in enumerate(fresh[:max_rows], start=1):
@@ -152,7 +153,7 @@ def alert_text(report, max_rows=8):
         )
     if len(fresh) > max_rows:
         lines.append("외 " + str(len(fresh) - max_rows) + "종목")
-    lines.append("※ 마감후 KRX 기준 / 매수 신호나 수익률 예측 아님")
+    lines.append("※ 수급자료 완비 종목만 검색 / 마감후 KRX 기준 / 매수 신호나 수익률 예측 아님")
     return title + "\n".join(lines)
 
 
