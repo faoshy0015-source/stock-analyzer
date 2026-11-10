@@ -779,6 +779,17 @@ with t5:
     st.caption('선택한 종목의 증권사 리포트를 코드로 조회합니다. 제목을 누르면 출처의 상세 페이지에서 원문을 확인할 수 있습니다.')
     st.link_button(f"📑 {resolved['name']} 종목 리포트 직접 보기 (Npay 증권)",
                    NAVER_ITEM_RESEARCH.format(code=resolved['code']),use_container_width=True)
+    st.markdown('#### EQUITY 골드회원 리서치')
+    st.link_button('🔎 EQUITY 골드회원 종목 리포트 검색',
+                   'https://www.equity.co.kr/reports/company',
+                   help='EQUITY에서 별도 로그인한 뒤 종목명 또는 종목코드로 검색합니다.',
+                   use_container_width=True)
+    st.caption(
+        f"EQUITY 사이트에서 로그인 후 '{resolved['name']}'"
+        f" ({resolved['code']})를 검색하세요. 계정정보를 Stock Analyzer에 입력하지 않으며, "
+        "유료 리포트를 자동 수집·저장·재배포하지 않습니다. "
+        "공식 데이터 제공 허가가 확인되기 전까지 검색 링크로만 연결합니다."
+    )
     st.markdown('#### 최근 목표주가 집계')
     if target_summary['average'] is not None:
         cc1,cc2,cc3=st.columns(3)
