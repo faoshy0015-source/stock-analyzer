@@ -1,20 +1,9 @@
-"""Regression checks for the approved-email-only Streamlit access gate."""
+"""Regression tests for early password gate and server-side Secrets only."""
 from contextlib import nullcontext
-from unittest.mock import Mock
 
 import pytest
 
-import access_gate
-from access_gate import require_login, PASSWORD_PASSED_KEY
-from email_auth import PENDING_KEY, SESSION_KEY
-
-
-SECRETS = {
-    "SUPABASE_URL": "https://example.supabase.co",
-    "SUPABASE_ANON_KEY": "anon",
-    "APP_ALLOWED_EMAILS": ["owner@example.com"],
-    "APP_PASSWORD": "legacy_password_must_not_unlock",
-}
+from access_gate import configured_password, verify_password, require_login
 
 
 class Stopped(Exception):
@@ -26,218 +15,113 @@ class Reran(Exception):
 
 
 class FakeStreamlit:
-    def __init__(self, secrets=None, *, state=None,
-                 input_text="", submit=False, logout=False):
-        self.secrets = {} if secrets is None else secrets
-        self.session_state = {} if state is None else state
-        self.input_text = input_text
-        self.submit = submit
-        self.logout = logout
-        self.sidebar = nullcontext()
-        self.errors = []
-        self.warnings = []
-        self.messages = []
-        self.markup = []
-        self.form_count = 0
+    def __init__(self, secrets=None, candidate="", submitted=False, authed=False):
+        self.secrets=secrets if secrets is not None else {}
+        self.session_state={"_hanav_stock_authenticated":True} if authed else {}
+        self.candidate=candidate
+        self.submitted=submitted
+        self.errors=[]
+        self.form_rendered=False
+        self.stopped=False
+        self.reran=False
+        self.markup=[]
 
+    def title(self,*args,**kwargs):pass
+    def caption(self,*args,**kwargs):pass
     def markdown(self, content, **kwargs):
         self.markup.append(str(content))
-
     def columns(self, *args, **kwargs):
         return [nullcontext(), nullcontext(), nullcontext()]
-
-    def error(self, message):
-        self.errors.append(message)
-
-    def warning(self, message):
-        self.warnings.append(message)
-
-    def caption(self, message):
-        self.messages.append(message)
-
-    def form(self, *args, **kwargs):
-        self.form_count += 1
+    def error(self,message):self.errors.append(message)
+    def form(self,*args,**kwargs):
+        self.form_rendered=True
         return nullcontext()
-
-    def text_input(self, *args, **kwargs):
-        return self.input_text
-
-    def form_submit_button(self, *args, **kwargs):
-        return self.submit
-
-    def button(self, *args, **kwargs):
-        if kwargs.get("key") == "stock_email_logout":
-            return self.logout
-        return False
-
+    def text_input(self,*args,**kwargs):
+        assert kwargs.get("type")=="password"
+        return self.candidate
+    def form_submit_button(self,*args,**kwargs):return self.submitted
     def stop(self):
+        self.stopped=True
         raise Stopped()
-
     def rerun(self):
+        self.reran=True
         raise Reran()
 
 
-def test_missing_allowlist_denies_password_only_sessions():
-    st = FakeStreamlit(
-        {"APP_PASSWORD": "legacy", "SUPABASE_URL": SECRETS["SUPABASE_URL"]},
-        state={"_hanav_stock_authenticated": True})
-    with pytest.raises(Stopped):
-        require_login(st)
-    assert st.errors and "승인 이메일" in st.errors[0]
+def test_default_secret_and_common_aliases():
+    assert configured_password({"APP_PASSWORD":"  초록 비밀  "})=="초록 비밀"
+    assert configured_password({"APP_PASSWORD":"primary","PASSWORD":"secondary"})=="primary"
+    assert configured_password({"APP_PW":"fallback"})=="fallback"
+    assert configured_password({"LOGIN_PASSWORD":"another"})=="another"
 
 
-def test_old_password_flag_cannot_grant_access():
-    st = FakeStreamlit(
-        SECRETS, state={"_hanav_stock_authenticated": True})
-    with pytest.raises(Stopped):
-        require_login(st)
-    assert "_hanav_stock_authenticated" not in st.session_state
-    assert st.form_count == 1
+def test_missing_or_empty_password_denies_access():
+    assert configured_password({}) is None
+    assert configured_password({"APP_PASSWORD":"","PASSWORD":"   "}) is None
+    st=FakeStreamlit()
+    with pytest.raises(Stopped):require_login(st)
+    assert st.stopped and not st.session_state.get("_hanav_stock_authenticated")
+    assert any("APP_PASSWORD" in error for error in st.errors)
 
 
-def test_unauthorized_email_never_requests_otp(monkeypatch):
-    send = Mock()
-    monkeypatch.setattr(access_gate, "request_email_code", send)
-    st = FakeStreamlit(SECRETS, input_text="intruder@other.com", submit=True)
-    with pytest.raises(Stopped):
-        require_login(st)
-    send.assert_not_called()
-    assert "승인된 이메일 주소" in st.errors[0]
+def test_correct_password_sets_session_and_reruns():
+    st=FakeStreamlit({"APP_PASSWORD":"문자열특수!9"},
+                     "문자열특수!9",submitted=True)
+    with pytest.raises(Reran):require_login(st)
+    assert st.session_state["_hanav_stock_authenticated"] is True
+    assert st.reran
+    assert not st.errors
 
 
-def test_approved_email_receives_code_and_is_not_yet_authenticated(monkeypatch):
-    send = Mock(return_value=True)
-    monkeypatch.setattr(access_gate, "request_email_code", send)
-    st = FakeStreamlit(SECRETS, input_text="owner@example.com", submit=True)
-    with pytest.raises(Reran):
-        require_login(st)
-    send.assert_called_once()
-    assert st.session_state[PENDING_KEY] == "owner@example.com"
-    assert SESSION_KEY not in st.session_state
+def test_wrong_password_stays_locked():
+    st=FakeStreamlit({"APP_PASSWORD":"secret"},
+                     "incorrect",submitted=True)
+    with pytest.raises(Stopped):require_login(st)
+    assert st.form_rendered
+    assert st.errors==["비밀번호가 일치하지 않습니다."]
+    assert not st.session_state.get("_hanav_stock_authenticated")
 
 
-def test_correct_otp_needs_external_verification_before_rerun(monkeypatch):
-    verified = {
-        "access_token": "token", "refresh_token": "refresh",
-        "email": "owner@example.com", "user_id": "uuid"
-    }
-    check = Mock(return_value=verified)
-    monkeypatch.setattr(access_gate, "verify_email_code", check)
-    st = FakeStreamlit(SECRETS, state={PENDING_KEY: "owner@example.com"},
-                       input_text="123456", submit=True)
-    with pytest.raises(Reran):
-        require_login(st)
-    assert st.session_state[SESSION_KEY] == verified
-    check.assert_called_once()
+def test_open_login_screen_waits_for_submit():
+    st=FakeStreamlit({"APP_PASSWORD":"secret"})
+    with pytest.raises(Stopped):require_login(st)
+    assert st.form_rendered and not st.reran
 
 
-def test_approved_saved_session_requires_online_validation_each_rerun(monkeypatch):
-    session = {"email": "owner@example.com",
-               "access_token": "token", "refresh_token": "refresh"}
-    check = Mock(return_value={
-        **session, "user_id": "uuid"
-    })
-    monkeypatch.setattr(access_gate, "validate_session", check)
-    st = FakeStreamlit(
-        SECRETS, state={SESSION_KEY: session, PASSWORD_PASSED_KEY: True})
+def test_existing_session_bypasses_login_form_only():
+    st=FakeStreamlit({},authed=True)
     require_login(st)
+    assert not st.form_rendered and not st.errors
+
+
+def test_credentials_are_not_trimmed_or_logged_on_verification():
+    assert verify_password("abc","abc")
+    assert verify_password("한글!","한글!")
+    assert not verify_password(" abc","abc")
+    assert not verify_password("abc ","abc")
+    assert not verify_password("abc","")
+    assert not verify_password(None,"abc")
+
+
+def test_login_ui_matches_etf_finder_green_first_style_and_does_not_leak_password():
+    st=FakeStreamlit({"APP_PASSWORD":"do-not-leak"})
+    with pytest.raises(Stopped):
+        require_login(st)
+    page="\n".join(st.markup)
+    assert "hanav-login-brand" in page
+    assert 'class="hanav-login-title">Stock Analyzer' in page
+    assert "Private Investment Dashboard" in page
+    assert "CREATED BY K.H.AHN" in page
+    assert "background:#008878!important" in page
+    assert "#e87d31 76%" in page  # tiny orange accent
+    assert "#f4f8f7" in page
+    assert "[data-testid=\"stForm\"]" in page
+    assert "hanav-auth-hero" not in page  # no oversized cream/orange hero
+    assert "background: linear-gradient(100deg, #d7752b" not in page
+    assert "do-not-leak" not in page
+    assert st.form_rendered
+
+def test_signed_in_session_does_not_emit_login_only_css():
+    st=FakeStreamlit({"APP_PASSWORD":"secret"},authed=True)
     require_login(st)
-    assert check.call_count == 2
-    assert st.form_count == 0
-    assert any("owner@example.com" in x for x in st.messages)
-
-
-def test_revoked_or_invalid_session_clears_previous_page_state(monkeypatch):
-    monkeypatch.setattr(access_gate, "validate_session", lambda *a: None)
-    st = FakeStreamlit(SECRETS, state={
-        SESSION_KEY: {"access_token": "revoked"},
-        "cached_stock_results": {"private": "data"},
-    })
-    with pytest.raises(Stopped):
-        require_login(st)
-    assert "cached_stock_results" not in st.session_state
-    assert st.form_count == 1
-
-
-def test_logout_clears_all_session_state(monkeypatch):
-    session = {"email": "owner@example.com",
-               "access_token": "token", "refresh_token": "refresh"}
-    monkeypatch.setattr(access_gate, "validate_session", lambda *args: {
-        **session, "user_id": "uuid"})
-    st = FakeStreamlit(SECRETS, state={
-        SESSION_KEY: session, PASSWORD_PASSED_KEY: True,
-        "old_stock_rows": [1, 2, 3]},
-        logout=True)
-    with pytest.raises(Reran):
-        require_login(st)
-    assert not st.session_state
-
-
-def test_etf_finder_green_theme_preserved_for_email_login():
-    st = FakeStreamlit(SECRETS)
-    with pytest.raises(Stopped):
-        require_login(st)
-    text = "\n".join(st.markup)
-    assert "Stock Analyzer" in text
-    assert "Private Investment Dashboard" in text
-    assert "CREATED BY K.H.AHN" in text
-    assert "background:#008878" in text
-    assert "#e87d31" in text
-    assert "APP_PASSWORD" not in text
-
-
-def test_approved_email_without_existing_password_stays_on_second_factor(monkeypatch):
-    verified = {"email": "owner@example.com",
-                "access_token": "access", "refresh_token": "refresh",
-                "user_id": "uuid"}
-    monkeypatch.setattr(access_gate, "validate_session",
-                        lambda *args: verified)
-    st = FakeStreamlit(SECRETS, state={SESSION_KEY: verified})
-    with pytest.raises(Stopped):
-        require_login(st)
-    assert st.form_count == 1
-    assert PASSWORD_PASSED_KEY not in st.session_state
-    assert any("이메일 인증 완료" in x for x in st.messages)
-
-
-def test_correct_app_password_requires_valid_email_first(monkeypatch):
-    verified = {"email": "owner@example.com",
-                "access_token": "access", "refresh_token": "refresh",
-                "user_id": "uuid"}
-    monkeypatch.setattr(access_gate, "validate_session",
-                        lambda *args: verified)
-    st = FakeStreamlit(
-        SECRETS, state={SESSION_KEY: verified},
-        input_text="legacy_password_must_not_unlock", submit=True)
-    with pytest.raises(Reran):
-        require_login(st)
-    assert st.session_state[PASSWORD_PASSED_KEY] is True
-    assert st.session_state[SESSION_KEY] == verified
-
-
-def test_wrong_password_still_blocks_verified_email(monkeypatch):
-    verified = {"email": "owner@example.com",
-                "access_token": "access", "refresh_token": "refresh",
-                "user_id": "uuid"}
-    monkeypatch.setattr(access_gate, "validate_session",
-                        lambda *args: verified)
-    st = FakeStreamlit(
-        SECRETS, state={SESSION_KEY: verified},
-        input_text="wrong", submit=True)
-    with pytest.raises(Stopped):
-        require_login(st)
-    assert PASSWORD_PASSED_KEY not in st.session_state
-    assert st.errors == ["앱 비밀번호가 일치하지 않습니다."]
-
-
-def test_no_existing_password_config_requires_email_otp_only(monkeypatch):
-    secrets = {key: value for key, value in SECRETS.items()
-               if key != "APP_PASSWORD"}
-    verified = {"email": "owner@example.com",
-                "access_token": "access", "refresh_token": "refresh",
-                "user_id": "uuid"}
-    monkeypatch.setattr(access_gate, "validate_session",
-                        lambda *args: verified)
-    st = FakeStreamlit(secrets, state={SESSION_KEY: verified})
-    require_login(st)
-    assert st.form_count == 0
+    assert st.markup==[]
