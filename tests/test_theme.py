@@ -14,18 +14,18 @@ def test_main_header_is_bright_and_independent():
     assert "INDEPENDENT STOCK RESEARCH · VERSION 1.3" in source
     assert "CREATED BY K.H.AHN" in source
     assert "HANAV INVESTMENT INTELLIGENCE" not in source
-    assert "background:linear-gradient(112deg,#fff0d7" in source
-    assert "border-left:5px solid #e87d31" in source
+    assert "background:linear-gradient(112deg,#dcefe6" in source
+    assert "border-left:5px solid #008878" in source
     assert "#102942" not in source
 
 
 def test_metric_tab_and_sidebar_use_warm_palette():
     source=(ROOT / "app.py").read_text(encoding="utf-8")
     assert "[data-testid=\"stMetric\"]" in source
-    assert "border-top:3px solid #e8a15e" in source
-    assert "background:#ffe7c8!important" in source
-    assert "background:linear-gradient(175deg,#fff8ed" in source
-    assert "#138c78" in source
+    assert "border-top:3px solid #008878" in source
+    assert "background:#dcefe6!important" in source
+    assert "background:linear-gradient(175deg,#edf5f2" in source
+    assert "#008878" in source\n    assert "#e87d31" in source
 
 
 def test_exported_html_matches_light_warm_theme_and_author():
@@ -36,6 +36,7 @@ def test_exported_html_matches_light_warm_theme_and_author():
     )
     assert "CREATED BY K.H.AHN" in report
     assert "HanaV" not in report and "HANAV" not in report
-    assert "background:#fffaf3" in report
-    assert "border-left:4px solid var(--orange)" in report
+    assert "background:#f4f8f7" in report
+    assert "border-left:4px solid var(--orange)" in report\n    assert "border-left:5px solid var(--teal)" in report
     assert "<title>테스트 | Stock Analyzer 리서치 제안서</title>" in report
+\n\ndef test_streamlit_theme_uses_green_primary_orange_as_accent():\n    config=(ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")\n    assert 'primaryColor = "#008878"' in config\n    assert 'backgroundColor = "#F4F8F7"' in config\n    source=(ROOT / "app.py").read_text(encoding="utf-8")\n    assert "--stock-teal:#008878" in source\n    assert "--stock-orange:#e87d31" in source\n    assert "background:#008878!important" in source\n
