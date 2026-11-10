@@ -47,6 +47,8 @@ def verify_password(candidate, configured):
 
 
 def require_login(st):
+    from email_access import require_approved_email
+    require_approved_email(st)
     """Green-first, ETF Finder-style centered login without changing authentication.
 
     The UI is emitted only for unauthenticated sessions. Secrets stay server
