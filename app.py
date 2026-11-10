@@ -23,6 +23,7 @@ from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH
 from flow_model import fetch_krx_turnover_context
 from consensus_targets import summarize_targets, naver_published_consensus
 from access_gate import require_login
+from approved_email_gate import require_approved_email
 from app_navigation import render_navigation
 from admin_tools import render_admin_controls
 from provider_resilience import optional_fetch
@@ -176,6 +177,7 @@ def secret(name):
 
 # Authenticate before rendering the dashboard or contacting external APIs.
 # Password is read only from Streamlit Secrets, never from GitHub files.
+require_approved_email(st, "stock-analyzer", "Stock Analyzer")
 require_login(st)
 
 from krx_auth import configure_streamlit_krx
