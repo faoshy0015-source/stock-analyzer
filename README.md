@@ -22,9 +22,9 @@ Python 3.11/3.12 권장. 브라우저에서 보통 `http://localhost:8501`로 �
 
 ## UI 디자인: Light Warm Research (v1.3)
 
-메인 앱은 어두운 네이비 배경을 제거한 **밝은 크림·아이보리·연한 민트** 기본 화면을 사용하고, **오렌지(#E87D31)**와 **그린(#138C78)**으로 시각적 우선순위를 구분합니다. 사이드바·상단 헤더·핵심 숫자 카드·활성 탭·차트·인쇄용 HTML을 같은 팔레트로 통일했습니다. 부분 평가 점수는 오렌지 톤으로 표시하고, 결측 데이터 표시는 별도 유지합니다.
+메인 앱은 어두운 배경 대신 **밝은 민트·오프화이트**를 사용하며, **그린(#008878)**을 기본색으로 유지하고 **오렌지(#E87D31)**를 강조색으로 사용합니다. 사이드바·상단 헤더·핵심 숫자 카드·활성 탭·차트·인쇄용 HTML을 같은 팔레트로 통일했습니다. 부분 평가 점수는 오렌지 톤으로 표시하고, 결측 데이터 표시는 별도 유지합니다.
 
-공식 금융기관 프로그램으로 오인되지 않도록 앱 메인 상단, 로그인, 내보내는 HTML 리포트에는 **INDEPENDENT STOCK RESEARCH / CREATED BY K.H.AHN** 개인 제작 표기를 사용합니다. 인증과 점수 산식은 이번 UI 개선에서 변경하지 않았습니다.
+공식 금융기관 프로그램으로 오인되지 않도록 앱 메인 상단, 로그인, 내보내는 HTML 리포트에는 **INDEPENDENT STOCK RESEARCH / CREATED BY K.H.AHN** 개인 제작 표기를 사용합니다. 점수 산식은 기존 기준을 유지하며, 접속 인증은 승인 이메일 OTP 방식으로 변경했습니다.
 
 ## Streamlit Community Cloud 배포
 
@@ -33,25 +33,28 @@ Python 3.11/3.12 권장. 브라우저에서 보통 `http://localhost:8501`로 �
 3. Streamlit Cloud **App settings > Secrets**에 필요한 인증정보를 등록합니다. OpenDART와 KIS 인증키는 화면에 입력하지 않으며 서버 측 Secrets에서만 읽습니다.
 
 ```toml
-APP_PASSWORD = "본인이 설정한 앱 접속 비밀번호"
+# 예시값: 반드시 실제 프로젝트·승인 사용자 주소로 교체하세요.
+SUPABASE_URL = "https://<project-ref>.supabase.co"
+SUPABASE_ANON_KEY = "<anon-key>"
+APP_ALLOWED_EMAILS = ["owner@example.com", "approved@naver.com"]
 DART_API_KEY = "본인_OpenDART_인증키"
 KIS_APP_KEY = ""
 KIS_APP_SECRET = ""
 ```
 
-DART·KIS 인증정보는 **서버 측에서만 사용**됩니다. KRX 조회는 현재 별도 KRX 키 없이 `pykrx`를 활용하며, Supabase는 이 버전에 연동되지 않았습니다. `secrets.toml` 원본은 GitHub에 절대 올리지 마세요. 이 버전은 OpenAI 키 입력·호출 기능을 제거했으며 종합 의견과 이벤트 평가는 별도 생성형 AI 비용 없이 규칙 기반으로 계산됩니다.
+DART·KIS·Supabase 인증정보는 **서버의 Streamlit Secrets**에서만 사용하며 GitHub에 업로드하지 않습니다.
+Supabase **email OTP 발송 설정(SMTP + 인증번호 템플릿)**이 추가로 필요합니다.
+자세한 절차는 문서 하단의 **「승인 이메일 전용 로그인」**을 따르세요.
 
+## 승인 이메일 인증 필수 (Streamlit Secrets)
 
-## 앱 접속 비밀번호 (Streamlit Secrets)
-
-이 앱은 시작할 때 **비밀번호를 확인한 후에만 종목 조회·분석 화면을 열도록** 구성되어 있습니다.
-
-- Streamlit Cloud → **App settings → Secrets**에 `APP_PASSWORD = "설정한비밀번호"`를 입력하고 저장합니다.
-- 기존에 `LOGIN_PASSWORD`, `ACCESS_PASSWORD`, `PASSWORD`, `APP_PASS`, `APP_PW`, `APP_ACCESS_PASSWORD`, `STOCK_ANALYZER_PASSWORD`, `ADMIN_PASSWORD`로 설정했다면 동일한 값을 인식합니다. 여러 이름이 동시에 있으면 `APP_PASSWORD`가 우선입니다.
-- 비밀번호를 입력해 로그인하면 **해당 브라우저의 현재 Streamlit 세션에서만** 인증 상태가 유지됩니다. 왼쪽 **로그아웃** 버튼을 누르면 다시 인증해야 합니다.
-- 비밀번호가 없거나 Secrets에 저장되지 않았다면 **공개 모드로 전환하지 않고 접근을 차단**합니다.
-- 실제 비밀번호를 소스 코드, README, GitHub Issues, 공개 ZIP이나 콘솔 로그에 올리지 마세요. 비밀번호 입력은 암호형 필드이며 서버에서 일정 시간 비교 방식으로 확인합니다.
-- 이 방식은 **소규모 공동사용을 위한 공용 비밀번호 보호**입니다. 사용자별 권한·강한 서버 측 시도 횟수 제한·SSO가 필요한 고객용 공개 서비스는 별도의 인증 체계가 적합합니다.
+- Stock Analyzer는 **승인 목록에 등록된 이메일 주소로만** 인증번호를 발송합니다.
+- **인증번호 검증 + Supabase 서버의 사용자 신원 확인** 후에만 종목 검색이 가능합니다.
+- **기존 `APP_PASSWORD`가 설정돼 있으면, 이메일 인증 후 기존 비밀번호도 입력해야 합니다.**
+  기존 비밀번호만으로는 로그인할 수 없습니다. 설정된 비밀번호가 없다면 이메일 인증만 필수입니다.
+- 승인 주소 목록·Supabase anon 키·SMTP 설정이 없으면 **관리자도 앱에 접속할 수 없습니다**.
+- 추가/철회: `APP_ALLOWED_EMAILS`에 이메일을 추가하거나 삭제하고 저장합니다.
+- 이 설정은 ETF Finder의 Streamlit Private 앱 Sharing 설정을 변경하지 않습니다.
 
 ## 처음 사용하는 순서
 
@@ -419,3 +422,76 @@ KRX 회원 인증정보가 등록돼 있어도, `from pykrx import stock` 초기
 
 한국투자증권 공식 예제:
 https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domestic_stock/investor_trade_by_stock_daily
+
+## 🔐 승인 이메일 전용 로그인 · 2026-11-10
+
+**보안 정책:** 이 앱의 모든 페이지(`app.py`, 수급 전환 검색, 수급 레이더)는
+**승인 목록에 있는 이메일 주소의 Supabase Auth OTP 검증이 완료돼야** 사용할 수 있습니다.
+기존 `APP_PASSWORD`·공유 비밀번호·`_hanav_stock_authenticated` 세션값만으로는
+접속할 수 없습니다. 승인된 이메일도 코드를 직접 입력해 인증해야 하며,
+기존 `APP_PASSWORD`가 설정된 앱은 **OTP 인증 후 기존 비밀번호 입력까지 요구**합니다.
+검증 이후에도 페이지를 열 때마다 Supabase Auth 서버에서 토큰/계정을 확인합니다.
+관리자가 승인 목록에서 주소를 삭제하면 다음 화면 실행 시 접근이 차단됩니다.
+
+### 설치 전 확인 (필수)
+
+**Streamlit Community Cloud의 비공개 앱 공유와 별개인 앱 내부 인증**입니다.
+현재 사용 중인 ETF Finder 비공개 앱의 설정을 변경하지 않습니다. Streamlit
+Community Cloud는 기본적으로 동시에 비공개 앱을 1개만 허용하기 때문에,
+이 앱이 Public URL로 배포되어 있더라도 로그인 후에만 데이터가 보이도록
+서버측 gate를 적용했습니다. 앱 주소/로그인 페이지만은 외부에서 접근할 수 있습니다.
+Private app 자체와 동일한 수준의 플랫폼 접근 차단을 제공하는 것은 아닙니다.
+
+1. **HanaV-Finder Supabase 프로젝트**에서 `Authentication → Providers → Email`
+   인증이 활성화됐는지 확인합니다.
+2. **이메일 발송 설정이 필수입니다.** Supabase 무료 기본 이메일 발송기는
+   **프로젝트 조직 멤버 주소로만** 보낼 수 있고 **시간당 2건**으로 제한됩니다.
+   외부 승인 사용자(네이버 등)에게 인증번호를 발송하려면
+   `Authentication → SMTP Settings`에서 **사용자 소유의 외부 SMTP 서비스**
+   (예: Resend, Brevo, SendGrid)를 설정해야 합니다.
+   SMTP 비밀번호는 GitHub 저장소에 넣지 마세요.
+3. `Authentication → Email Templates`의 **Magic Link/OTP** 템플릿을
+   **숫자 인증번호를 보내는 형식**으로 수정합니다. 기존
+   `{{ .ConfirmationURL }}` 링크 대신 이메일 본문에
+   `{{ .Token }}`을 표시해야 앱의 코드 입력 방식과 일치합니다.
+   초기 회원가입 확인을 위한 **Confirm signup** 템플릿도 확인하세요.
+   예시: `<p>Stock Analyzer 인증번호: <strong>{{ .Token }}</strong></p>`
+4. Streamlit Cloud → Stock Analyzer → **Settings → Secrets**에
+   기존 값을 유지하면서 다음 **서버 전용 설정을 추가**하세요:
+
+   ```toml
+   # 기존 SUPABASE_URL이 이 프로젝트를 향하는지 확인
+   SUPABASE_URL = "https://<project-ref>.supabase.co"
+   # Supabase Project Settings → API Keys의 공개용 anon 키
+   SUPABASE_ANON_KEY = "<supabase-anon-key>"
+   # 소유자 본인 이메일을 반드시 포함한 정확한 승인 주소들
+   APP_ALLOWED_EMAILS = ["owner@example.com", "viewer@naver.com"]
+   ```
+
+   위의 이메일·URL·키는 **예시입니다.** 승인 주소를 실제 본인 이메일과
+   직접 승인한 이용자 주소로 바꾸세요. 목록은 채팅이나 GitHub 코드에 게시하지 않고
+   Streamlit Secrets에서만 변경하세요. 인증용 키는
+   `SUPABASE_ANON_KEY`이며 `SUPABASE_SERVICE_ROLE_KEY`와 다릅니다.
+5. 앱을 새로고침해 승인 이메일 입력 → 이메일 OTP 수신 → 숫자 코드 검증 →
+   (기존 APP_PASSWORD 설정 시) 앱 비밀번호 입력으로 로그인합니다.
+   다른 브라우저/비인가 이메일로는 접근할 수 없는지 확인하세요.
+
+### 승인/철회
+
+- **추가:** `APP_ALLOWED_EMAILS` 배열에 이메일을 추가 → Secrets 저장
+- **철회:** 같은 배열에서 이메일 삭제 → Secrets 저장. 이미 로그인한 사람도
+  다음 앱 실행·페이지 이동·새로고침 시 서버측 목록을 다시 확인하므로 거부됩니다
+- **로그아웃:** 각 페이지 왼쪽 메뉴의 `🔒 로그아웃`.
+  이 버튼은 현재 세션의 인증/분석 데이터를 모두 지웁니다.
+- 목록이 비어 있거나 URL/anon 키가 잘못됐으면 **모든 접속을 차단**합니다.
+  인증 완료 전 주가/API/사용자 데이터가 표시되지 않습니다.
+- **참고:** Supabase Auth 기본 메일 발송 제한, SMTP 제공자의 설정,
+  비공개 URL 여부는 별도로 확인해야 합니다.
+  이 기능이 준비되기 전에는 기존 APP_PASSWORD만으로 접속할 수 없으므로
+  **설정을 완료하지 않으면 관리자를 포함한 모두가 잠깁니다.**
+
+공식 자료:
+- https://docs.streamlit.io/deploy/streamlit-community-cloud/share-your-app
+- https://supabase.com/docs/guides/auth/auth-email-passwordless
+- https://supabase.com/docs/guides/auth/auth-email-templates
+- https://supabase.com/docs/guides/auth/auth-smtp
