@@ -291,6 +291,7 @@ def test_no_eligible_stocks_is_data_failure_not_zero_signal():
 
 def test_missing_non_numeric_investor_data_is_not_counted_as_covered():
     quotes, tables = market_tables()
+    tables["기관합계"]["순매수거래량"] = tables["기관합계"]["순매수거래량"].astype(object)
     tables["기관합계"].loc["000660", "순매수거래량"] = "미확인"
     frame, q = assemble_daily_snapshot("2026-11-09", "KOSPI", quotes, tables)
     assert frame["institution_qty"].isna().sum() == 1
