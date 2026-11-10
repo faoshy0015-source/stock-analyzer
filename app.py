@@ -23,6 +23,8 @@ from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH
 from flow_model import fetch_krx_turnover_context
 from consensus_targets import summarize_targets, naver_published_consensus
 from access_gate import require_login
+from app_navigation import render_navigation
+from admin_tools import render_admin_controls
 from provider_resilience import optional_fetch
 from score_table import render_score_table
 
@@ -178,6 +180,7 @@ require_login(st)
 
 from krx_auth import configure_streamlit_krx
 KRX_LOGIN_READY = configure_streamlit_krx(st)
+render_navigation(st)
 
 
 @st.cache_data(ttl=21600,show_spinner=False)
@@ -269,16 +272,21 @@ with st.sidebar:
              secret('KRX_OPEN_API_KEY') or secret('KRX_OPENAPI_KEY') or
              secret('KRX_KEY') or secret('AUTH_KEY'))
     st.divider()
-    st.caption('종목 검색 범위')
-    if st.button('KRX 전체 종목 목록 불러오기',use_container_width=True):
+    st.caption('종목 검색 범위 갱신 · 관리자 전용')
+    def _admin_refresh_krx():
         with st.spinner('KRX 종목 목록을 확인하는 중...'):
-            st.session_state['krx_listing']=cached_listing()
-    if api_key and st.button('DART 상장사 목록 불러오기',use_container_width=True):
+            st.session_state['krx_listing'] = cached_listing()
+
+    def _admin_refresh_dart():
         with st.spinner('DART 기업코드 ZIP 읽는 중...'):
-            st.session_state['dart_listing'],st.session_state['dart_load_error']=cached_corp_codes(api_key)
-    if st.button('새로고침 (캐시 초기화)',use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+            st.session_state['dart_listing'], st.session_state['dart_load_error'] = (
+                cached_corp_codes(api_key)
+            )
+
+    render_admin_controls(
+        st, krx_loader=_admin_refresh_krx,
+        dart_loader=_admin_refresh_dart if api_key else None,
+    )
     st.divider()
     with st.expander('🔧 DART 연결 진단',expanded=False):
         st.caption('DART 키는 Secrets에서만 읽으며, 진단 결과에 키 값을 표시하지 않습니다.')
