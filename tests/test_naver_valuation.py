@@ -49,6 +49,36 @@ def test_year_labeled_eps_bps_are_distinct_and_consensus_only():
     assert 2025 not in rows
 
 
+def test_next_year_estimate_even_if_provider_drops_consensus_flag():
+    payload = _forecast_payload()
+    payload["financeInfo"]["trTitleList"][2]["isConsensus"] = "N"
+    rows = parse_naver_annual(payload, current_year=2026)
+    assert rows[2026]["eps"] == 45655
+    assert rows[2027]["eps"] == 73055
+    assert rows[2027]["bps"] == 171196
+
+
+def test_next_year_date_key_variant_with_explicit_estimate_label():
+    payload = _forecast_payload()
+    header = payload["financeInfo"]["trTitleList"][2]
+    header.update({"key": "2027.12.", "title": "2027.12.(E)", "isConsensus": ""})
+    for row in payload["financeInfo"]["rowList"]:
+        cols = row["columns"]
+        if "202712" in cols:
+            cols["2027.12."] = cols.pop("202712")
+    result = parse_naver_annual(payload, current_year=2026)
+    assert result[2027]["eps"] == 73055
+    assert result[2027]["bps"] == 171196
+
+
+def test_next_year_missing_source_does_not_copy_prior_year():
+    payload = _forecast_payload()
+    for row in payload["financeInfo"]["rowList"]:
+        row["columns"].pop("202712", None)
+    result = parse_naver_annual(payload, current_year=2026)
+    assert 2026 in result and 2027 not in result
+
+
 def test_only_explicit_consensus_years_appear():
     payload = _forecast_payload()
     payload["financeInfo"]["trTitleList"][1]["isConsensus"] = "N"
