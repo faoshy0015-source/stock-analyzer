@@ -726,8 +726,8 @@ with t3:
         st.dataframe(
             pd.DataFrame(forecast_rows),hide_index=True,use_container_width=True,
             column_config={
-                '예상 EPS(원)':st.column_config.NumberColumn(format='%,.0f'),
-                '예상 BPS(원)':st.column_config.NumberColumn(format='%,.0f'),
+                '예상 EPS(원)':st.column_config.NumberColumn(format='%.0f'),
+                '예상 BPS(원)':st.column_config.NumberColumn(format='%.0f'),
                 '현재가 기준 예상 PER(배)':st.column_config.NumberColumn(format='%.2f'),
             }
         )
