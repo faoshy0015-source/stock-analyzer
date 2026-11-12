@@ -713,36 +713,48 @@ with t3:
 
     st.markdown('#### 연도별 컨센서스 전망 (당해연도·다음연도)')
     forecasts=npay.get('annual_forecasts') or {}
+    current_year=datetime.now(ZoneInfo('Asia/Seoul')).year
     forecast_rows=[]
-    for yr in sorted(forecasts):
-        row=forecasts[yr]
+    missing_forecast_years=[]
+    for yr in (current_year,current_year+1):
+        row=forecasts.get(yr,forecasts.get(str(yr),{}))
+        has_eps=number(row.get('eps')) is not None
+        has_bps=number(row.get('bps')) is not None
+        if not (has_eps or has_bps):
+            status='원천 미확인'
+            missing_forecast_years.append(yr)
+        else:
+            status='확인됨' if has_eps and has_bps else '일부 확인'
         forecast_rows.append({
             '연도':str(yr)+'년(E)',
             '예상 EPS(원)':row.get('eps'),
             '예상 BPS(원)':row.get('bps'),
             '현재가 기준 예상 PER(배)':row.get('current_price_per'),
+            '수신 상태':status,
         })
-    if forecast_rows:
-        st.dataframe(
-            pd.DataFrame(forecast_rows),hide_index=True,use_container_width=True,
-            column_config={
-                '예상 EPS(원)':st.column_config.NumberColumn(format='%.0f'),
-                '예상 BPS(원)':st.column_config.NumberColumn(format='%.0f'),
-                '현재가 기준 예상 PER(배)':st.column_config.NumberColumn(format='%.2f'),
-            }
+    st.dataframe(
+        pd.DataFrame(forecast_rows),hide_index=True,use_container_width=True,
+        column_config={
+            '예상 EPS(원)':st.column_config.NumberColumn(format='%.0f'),
+            '예상 BPS(원)':st.column_config.NumberColumn(format='%.0f'),
+            '현재가 기준 예상 PER(배)':st.column_config.NumberColumn(format='%.2f'),
+            '수신 상태':st.column_config.TextColumn('수신 상태'),
+        }
+    )
+    if missing_forecast_years:
+        st.warning(
+            ', '.join(str(yr)+'년(E)' for yr in missing_forecast_years)
+            + '의 예상 EPS/BPS를 현재 제공처 응답에서 확인하지 못했습니다. '
+              '자료 미제공 또는 응답 형식 차이일 수 있으며, 임의의 추정값을 넣지 않았습니다.'
         )
-        st.caption(
-            '출처: Npay 연간 재무정보의 컨센서스(E) · '
-            '현재가 기준 예상 PER = 동일 제공처의 조회 시세 ÷ 해당 연도 예상 EPS. '
-            '공식 연간 PER 집계치와 다른 값일 수 있으며 EPS가 0 이하이면 산출하지 않습니다. '
-            + ('적용 주가 '+fmt(npay.get('quote_price'),'원',0)
-               if number(npay.get('quote_price')) is not None else '적용 주가 미확인')
-        )
-        st.caption('예상 EPS와 예상 BPS는 서로 다른 지표입니다. '
-                   '전망치는 새 컨센서스 발표와 시세 변동에 따라 변경됩니다.')
-    else:
-        st.info('당해연도·다음연도 Npay 컨센서스 EPS/BPS를 확인하지 못했습니다. '
-                '연도별 전망치를 임의의 과거 값이나 다른 제공처 수치로 채우지 않습니다.')
+    st.caption(
+        '출처: Npay 연간 재무정보의 컨센서스(E) · '
+        '현재가 기준 예상 PER = 동일 제공처 조회 시세 ÷ 해당 연도 예상 EPS. '
+        '공식 연간 PER 집계치와 다를 수 있으며 EPS가 0 이하이면 산출하지 않습니다. '
+        + ('적용 주가 '+fmt(npay.get('quote_price'),'원',0)
+           if number(npay.get('quote_price')) is not None else '적용 주가 미확인')
+    )
+    st.caption('예상 EPS와 BPS는 서로 다른 지표이며, 컨센서스와 주가 변동에 따라 변경됩니다.')
 
     krx_date=str(valuation_context.get('date') or '')
     krx_specs=[
