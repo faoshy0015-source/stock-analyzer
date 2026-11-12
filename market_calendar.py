@@ -703,46 +703,49 @@ def render_market_calendar(selected_code="", selected_name=""):
             "실제": row.get("실제", "-"),
         })
 
-    left, right = st.columns([1.28, 1.0], gap="large")
-    with left:
-        st.markdown("**🏢 주요 기업 실적 발표**")
+    # Full-width tabs prevent tables with 6-8 columns from being squeezed
+    # into half-page panels next to the Streamlit sidebar.
+    earnings_tab, macro_tab = st.tabs([
+        "🏢 주요 기업 실적 발표", "🌐 주요 매크로 발표",
+    ])
+    with earnings_tab:
         st.caption("🇰🇷 국내 잠정·발표 예정 및 추정 기간 · 🇺🇸 미국 주요 기업 실적")
         if combined_earn:
             frame = pd.DataFrame(combined_earn)
             st.dataframe(
                 frame, use_container_width=True, hide_index=True,
-                height=min(430, 38 + 35 * min(len(frame), 11)),
+                height=min(530, 38 + 35 * min(len(frame), 14)),
                 column_config={
-                    "시장": st.column_config.TextColumn("시장", width="small"),
-                    "날짜/기간": st.column_config.TextColumn("날짜/기간", width="medium"),
-                    "구분": st.column_config.TextColumn("구분", width="small"),
-                    "코드": st.column_config.TextColumn("코드", width="small"),
-                    "기업": st.column_config.TextColumn("기업", width="large"),
-                    "참고": st.column_config.TextColumn("참고", width="medium"),
+                    "시장": st.column_config.TextColumn("시장", width=65),
+                    "날짜/기간": st.column_config.TextColumn("날짜/기간", width=110),
+                    "구분": st.column_config.TextColumn("구분", width=90),
+                    "코드": st.column_config.TextColumn("코드", width=95),
+                    "기업": st.column_config.TextColumn("기업", width=280),
+                    "참고": st.column_config.TextColumn("참고", width=140),
                 },
             )
         else:
             st.info("해당 기간의 실적 발표 일정을 확인하지 못했습니다.")
 
-    with right:
-        st.markdown("**🌐 주요 매크로 발표**")
+    with macro_tab:
         st.caption("🇰🇷 한국은행·통계청 지표 · 🇺🇸 CPI·PCE·고용·FOMC·GDP·ISM 등")
         if combined_macro:
             frame = pd.DataFrame(combined_macro)
             st.dataframe(
                 frame, use_container_width=True, hide_index=True,
-                height=min(430, 38 + 35 * min(len(frame), 11)),
+                height=min(530, 38 + 35 * min(len(frame), 14)),
                 column_config={
-                    "시장": st.column_config.TextColumn("시장", width="small"),
-                    "날짜": st.column_config.TextColumn("날짜", width="small"),
-                    "시각": st.column_config.TextColumn("시각", width="small"),
-                    "중요도": st.column_config.TextColumn("중요도", width="small"),
-                    "지표": st.column_config.TextColumn("지표", width="large"),
-                    "예상": st.column_config.TextColumn("예상", width="small"),
-                    "이전": st.column_config.TextColumn("이전", width="small"),
-                    "실제": st.column_config.TextColumn("실제", width="small"),
+                    "시장": st.column_config.TextColumn("시장", width=60),
+                    "날짜": st.column_config.TextColumn("날짜", width=82),
+                    "시각": st.column_config.TextColumn("시각 (KST/ET)", width=112),
+                    "중요도": st.column_config.TextColumn("중요도", width=74),
+                    "지표": st.column_config.TextColumn("지표", width=270),
+                    "예상": st.column_config.TextColumn("예상", width=82),
+                    "이전": st.column_config.TextColumn("이전", width=82),
+                    "실제": st.column_config.TextColumn("실제", width=82),
                 },
             )
+            st.caption("화면 폭이 좁은 경우 표 아래 가로 스크롤로 나머지 열을 볼 수 있습니다.")
         else:
             st.info("해당 기간의 주요 경제지표 일정을 확인하지 못했습니다.")
 
