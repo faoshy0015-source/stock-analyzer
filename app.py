@@ -19,6 +19,7 @@ from trade_plan import conditional_trade_plan
 from proposal_visuals import png_summary
 from valuation_sources import krx_company_marketcap, fill_valuation, positive, display_valuation_ratios
 from valuation_context import fetch_valuation_context
+from naver_valuation import fetch_naver_valuation
 from analyst_reports import get_analyst_reports, HANKYUNG_PORTAL, NAVER_RESEARCH, NAVER_ITEM_RESEARCH
 from flow_model import fetch_krx_turnover_context
 from consensus_targets import summarize_targets, naver_published_consensus
@@ -206,6 +207,9 @@ def cached_krx_valuation(code,market,key):return krx_company_marketcap(code,mark
 
 @st.cache_data(ttl=1800,show_spinner=False)
 def cached_valuation_context(code,market):return fetch_valuation_context(code,market)
+
+@st.cache_data(ttl=900,show_spinner=False)
+def cached_naver_valuation(code):return fetch_naver_valuation(code)
 
 @st.cache_data(ttl=3600,show_spinner=False)
 def cached_flow(code):return get_investor_flows(code)
@@ -434,6 +438,13 @@ with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False)
         data_issues,
         validator=lambda value: isinstance(value,dict))
     profile['__valuation_context']=valuation_context
+    st.write('네이버 금융(Npay) 투자지표 별도 조회')
+    naver_snapshot=optional_fetch(
+        "Npay 최신 투자지표",
+        lambda: cached_naver_valuation(resolved['code']),
+        lambda: {"source":"네이버 금융 Npay","error":"Npay 수신 실패"},
+        data_issues,
+        validator=lambda value: isinstance(value,dict))
     display_ratios=display_valuation_ratios(profile,valuation_context)
     incomplete=(incomplete or display_ratios['PER']['value'] is None or
                 display_ratios['PBR']['value'] is None)
@@ -665,7 +676,74 @@ with t2:
         st.caption('금융업(은행·증권·보험 등)은 제조업용 건전성 기준을 적용하지 않으며 전용 평가가 마련될 때까지 보류합니다.')
 
 with t3:
-    st.markdown('#### 한국거래소(KRX) 투자지표 · Npay와 다른 데이터 제공처')
+    st.markdown('#### 네이버 금융(Npay) 기준 PER · EPS · PBR · BPS')
+    npay=naver_snapshot if isinstance(naver_snapshot,dict) else {}
+    npay_specs=[
+        ('PER',npay.get('per'),'배',2),
+        ('EPS',npay.get('eps'),'원',0),
+        ('PBR',npay.get('pbr'),'배',2),
+        ('BPS',npay.get('bps'),'원',0),
+        ('배당수익률',npay.get('dividend_yield'),'%',2),
+        ('주당배당금(DPS)',npay.get('dps'),'원',0),
+    ]
+    if any(number(value) is not None for _,value,_,_ in npay_specs):
+        npay_columns=st.columns(3)
+        for i,(label,value,unit,decimals) in enumerate(npay_specs):
+            with npay_columns[i%3]:
+                st.metric(label,fmt(value,unit,decimals)
+                          if number(value) is not None else '미확인')
+        st.caption(
+            '출처: 네이버 금융 Npay 모바일 투자지표 · 조회 요청시각 '
+            +str(npay.get('requested_at') or '미확인')
+            +(' · 시세 기준시각 '+str(npay['quote_time']) if npay.get('quote_time') else '')
+        )
+        st.caption(
+            '네이버 금융의 PER·EPS 및 PBR·BPS는 제공처의 실적·시세 반영 기준입니다. '
+            '연결/별도, 최근 결산·최근 4분기 적용 여부는 종목 및 제공처 갱신에 따라 다를 수 있습니다.'
+        )
+    else:
+        st.warning(
+            '네이버 금융 PER·EPS·PBR·BPS를 받지 못했습니다. '
+            '아래 KRX 지표는 별도 기준이므로 네이버 값으로 간주하지 않습니다.'
+        )
+        if npay.get('error'):
+            st.caption('Npay 조회 상태: '+str(npay['error']))
+    for note in (npay.get('warnings') or []):
+        st.caption('Npay 데이터 검증: '+str(note))
+
+    st.markdown('#### 연도별 컨센서스 전망 (당해연도·다음연도)')
+    forecasts=npay.get('annual_forecasts') or {}
+    forecast_rows=[]
+    for yr in sorted(forecasts):
+        row=forecasts[yr]
+        forecast_rows.append({
+            '연도':str(yr)+'년(E)',
+            '예상 EPS(원)':row.get('eps'),
+            '예상 BPS(원)':row.get('bps'),
+            '현재가 기준 예상 PER(배)':row.get('current_price_per'),
+        })
+    if forecast_rows:
+        st.dataframe(
+            pd.DataFrame(forecast_rows),hide_index=True,use_container_width=True,
+            column_config={
+                '예상 EPS(원)':st.column_config.NumberColumn(format='%,.0f'),
+                '예상 BPS(원)':st.column_config.NumberColumn(format='%,.0f'),
+                '현재가 기준 예상 PER(배)':st.column_config.NumberColumn(format='%.2f'),
+            }
+        )
+        st.caption(
+            '출처: Npay 연간 재무정보의 컨센서스(E) · '
+            '현재가 기준 예상 PER = 동일 제공처의 조회 시세 ÷ 해당 연도 예상 EPS. '
+            '공식 연간 PER 집계치와 다른 값일 수 있으며 EPS가 0 이하이면 산출하지 않습니다. '
+            + ('적용 주가 '+fmt(npay.get('quote_price'),'원',0)
+               if number(npay.get('quote_price')) is not None else '적용 주가 미확인')
+        )
+        st.caption('예상 EPS와 예상 BPS는 서로 다른 지표입니다. '
+                   '전망치는 새 컨센서스 발표와 시세 변동에 따라 변경됩니다.')
+    else:
+        st.info('당해연도·다음연도 Npay 컨센서스 EPS/BPS를 확인하지 못했습니다. '
+                '연도별 전망치를 임의의 과거 값이나 다른 제공처 수치로 채우지 않습니다.')
+
     krx_date=str(valuation_context.get('date') or '')
     krx_specs=[
         ('PER',valuation_context.get('krx_per'),'배',2),
@@ -675,35 +753,39 @@ with t3:
         ('배당수익률',valuation_context.get('krx_dividend_yield'),'%',2),
         ('주당배당금(DPS)',valuation_context.get('krx_dps'),'원',0),
     ]
-    if krx_date and any(number(value) is not None for _,value,_,_ in krx_specs):
-        krx_columns=st.columns(3)
-        for i,(label,value,unit,decimals) in enumerate(krx_specs):
-            with krx_columns[i%3]:
-                st.metric(label,fmt(value,unit,decimals) if number(value) is not None else '미확인')
-        st.caption(
-            f"출처: 한국거래소 투자지표(KRX/pykrx) · 조회 기준일 {krx_date}. "
-            "EPS·BPS와 배당 지표는 Npay·FnGuide와 회계연도, 연결/별도, 주식수 조정, "
-            "시세 기준일이 달라 수치가 일치하지 않을 수 있습니다. "
-            "표시한 EPS는 애널리스트 추정 EPS가 아닙니다."
-        )
-    else:
-        st.info('KRX PER·EPS·PBR·BPS·배당 투자지표를 확인하지 못했습니다. '
-                'Npay 화면의 수치를 복사해 대신 채우지 않으며, Yahoo·DART 지표는 아래에 별도 표시합니다.')
-        for error in valuation_context.get('errors') or []:
-            st.caption('KRX 지표 조회 상태: '+str(error))
-    st.caption('추정 EPS·PER은 별도 전망치이며 검증 가능한 제공처 값이 없으면 미산출로 유지합니다.')
+    with st.expander('📚 한국거래소(KRX) 투자지표 · 다른 집계 기준과 비교',expanded=False):
+        if krx_date and any(number(v) is not None for _,v,_,_ in krx_specs):
+            krx_columns=st.columns(3)
+            for i,(label,value,unit,decimals) in enumerate(krx_specs):
+                with krx_columns[i%3]:
+                    st.metric(label,fmt(value,unit,decimals)
+                              if number(value) is not None else '미확인')
+            st.caption(
+                '출처: KRX/pykrx · 기준일 '+krx_date
+                +' · 다른 실적 기간·회계 기준의 투자지표이므로 '
+                '네이버 수치와 직접 대체하거나 조합할 수 없습니다.'
+            )
+        else:
+            st.info('KRX 투자지표를 조회하지 못했습니다.')
+            for error in valuation_context.get('errors') or []:
+                st.caption('KRX 조회 상태: '+str(error))
+    st.caption('Npay의 추정 PER·추정 EPS는 확정 실적 기반 PER·EPS와 별도 지표입니다.')
     st.divider()
     vc1,vc2=st.columns(2)
     with vc1:
         st.subheader('밸류에이션')
+        # The confirmed/current Npay ratios are shown above; keep other providers
+        # explicitly separate rather than silently mixing different definitions.
         vals=[
               ('PER (KRX 확인값)' if display_ratios['PER']['kind']=='krx' else 'PER (별도 산출값)',
                display_ratios['PER']['value'],'배'),
-              ('Forward PER (Yahoo 추정 · 별도 기준)',profile.get('forwardPE'),'배'),
-              ('추정 EPS (Yahoo 추정 · 별도 기준)',profile.get('forwardEps'),'원'),
+              ('Forward PER (Yahoo 추정 · 12M)',profile.get('forwardPE'),'배'),
+              ('추정 EPS (Yahoo 추정 · 12M)',profile.get('forwardEps'),'원'),
               ('PBR (KRX 확인값)' if display_ratios['PBR']['kind']=='krx' else 'PBR (별도 산출값)',
                display_ratios['PBR']['value'],'배'),
-              ('ROE (DART 간이)' if profile.get('__roe_approx') else 'ROE (외부 제공)',(number(profile.get('returnOnEquity')) or 0)*100 if profile.get('returnOnEquity') is not None else None,'%'),
+              ('ROE (DART 간이)' if profile.get('__roe_approx') else 'ROE (외부 제공)',
+               (number(profile.get('returnOnEquity')) or 0)*100
+               if profile.get('returnOnEquity') is not None else None,'%'),
               ('시가총액 (외부 제공 또는 KRX)',profile.get('marketCap'),'원')]
         for label,val,unit in vals:
             st.write(f'**{label}:** {won(val) if unit=="원" and "시가총액" in label else fmt(val,unit,0 if unit=="원" else 2)}')
