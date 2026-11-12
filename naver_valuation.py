@@ -85,8 +85,39 @@ ANNUAL_FIELDS = {
 }
 
 
+def _annual_period(column):
+    """Year and month from the provider's key/title; reject quarterly columns."""
+    key = str(column.get("key") or "").strip()
+    title = str(column.get("title") or "").strip()
+    match = re.match(r"^(20\d{2})(?:[-./]?(\d{2}))?(?:[^\d].*)?$", key)
+    if not match:
+        match = re.search(r"(20\d{2})[.\-/ ]?(\d{2})?", title)
+    if not match:
+        return None
+    year = int(match.group(1))
+    month = match.group(2)
+    if month and month != "12":
+        return None
+    return year
+
+
+def _annual_columns(columns):
+    """Accept keyed dicts and lists of period/value objects, without guessing."""
+    if isinstance(columns, dict):
+        return columns
+    if isinstance(columns, list):
+        return {str(col.get("key") or "").strip(): col.get("value")
+                for col in columns if isinstance(col, dict) and col.get("key")}
+    return {}
+
+
 def parse_naver_annual(payload, current_year=None):
-    """Read explicitly flagged forecast columns. No inferred consensus years."""
+    """Read current/next-year forecast EPS/BPS from explicitly dated annual rows.
+
+    Future-year columns necessarily represent estimates even when the JSON
+    provider does not set isConsensus='Y'. Current-year columns require an
+    explicit consensus flag or an (E) marker. Never promote prior-year actuals.
+    """
     if not isinstance(payload, dict):
         return {}
     info = payload.get("financeInfo")
@@ -96,22 +127,26 @@ def parse_naver_annual(payload, current_year=None):
     rows = info.get("rowList")
     if not isinstance(headers, list) or not isinstance(rows, list):
         return {}
+    if current_year is None:
+        current_year = datetime.now(ZoneInfo("Asia/Seoul")).year
+
     forecast_periods = {}
     for col in headers:
         if not isinstance(col, dict):
             continue
-        if str(col.get("isConsensus") or "").strip().upper() != "Y":
+        year = _annual_period(col)
+        if year not in (current_year, current_year + 1):
             continue
         key = str(col.get("key") or "").strip()
-        if not re.fullmatch(r"20\d{4}", key):
+        if not key:
             continue
-        year = int(key[:4])
-        if current_year is not None and year not in (current_year, current_year + 1):
-            continue
-        # Use a fiscal year-ending December period for calendar-year comparison.
-        if key[4:6] != "12":
+        flagged = str(col.get("isConsensus") or "").strip().upper() in ("Y", "TRUE", "1")
+        title = str(col.get("title") or "")
+        marked_estimate = bool(re.search(r"\(\s*[Ee]\s*\)|예상|추정", title))
+        if not (flagged or marked_estimate or year > current_year):
             continue
         forecast_periods[key] = year
+
     if not forecast_periods:
         return {}
     result = {year: {"year": year, "estimated": True}
@@ -124,19 +159,22 @@ def parse_naver_annual(payload, current_year=None):
         if not match:
             continue
         field = ANNUAL_FIELDS[match.group(1)]
-        columns = row.get("columns")
-        if not isinstance(columns, dict):
+        columns = _annual_columns(row.get("columns"))
+        if not columns:
             continue
         for key, year in forecast_periods.items():
             raw = columns.get(key)
+            if raw is None:
+                # Some providers key data by the compact year/month value,
+                # while the header uses an expanded date format.
+                compact = re.sub(r"\D", "", key)
+                raw = columns.get(compact)
             if isinstance(raw, dict):
                 raw = raw.get("value")
             value = _number(raw)
             if value is None or (field != "eps" and value <= 0):
                 continue
-            # EPS may be negative; do not turn an earnings loss into a PER.
             result[year][field] = value
-    # Remove empty financial rows; estimates without EPS/BPS are not useful.
     return {year: row for year, row in result.items()
             if any(k in row for k in ("eps", "bps"))}
 
