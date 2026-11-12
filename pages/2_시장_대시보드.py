@@ -252,7 +252,7 @@ if selected_sector is None:
         labels=sector["업종"].tolist(),
         parents=[""] * len(sector),
         values=(sector["평균등락률"].abs() + .35).tolist(),
-        text=[f"{name} ↗<br>{float(pct):+.2f}%"
+        text=[f"{name} ▶<br>{float(pct):+.2f}%"
               for name, pct in zip(sector["업종"], sector["평균등락률"])],
         textinfo="text",
         textfont=dict(color="white", size=16),
@@ -359,6 +359,14 @@ chosen_sector = st.selectbox(
     "업종 선택 · 관련 종목 확인", sector["업종"].tolist(),
     key="stock_dashboard_sector"
 )
+if st.button(
+    "📊 선택 업종의 종목 TOP 5 카드 보기",
+    key="stock_dashboard_sector_open",
+    use_container_width=True,
+):
+    st.session_state[selection_key] = chosen_sector
+    st.rerun()
+
 members = quotes.loc[quotes["업종"] == chosen_sector].sort_values(
     "등락률(%)", ascending=False
 )
