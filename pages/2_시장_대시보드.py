@@ -157,15 +157,17 @@ def _render_ranked(frame, title, positive=True):
     ordered = frame.sort_values("등락률(%)", ascending=not positive).head(6)
     if ordered.empty:
         st.caption("조건에 해당하는 종목이 없습니다.")
-    for row in ordered.itertuples(index=False):
+    for _, row in ordered.iterrows():
+        name, code = str(row["종목명"]), str(row["종목코드"])
+        change = float(row["등락률(%)"])
         first, second = st.columns([4.2, 1.1], vertical_alignment="center")
         first.markdown(
-            f"**{escape(str(row.종목명))}** · {escape(str(row.종목코드))} "
-            f"　{'🟢' if row._5 >= 0 else '🔴'} **{row._5:+.2f}%**"
+            f"**{escape(name)}** · {escape(code)} "
+            f"　{'🟢' if change >= 0 else '🔴'} **{change:+.2f}%**"
         )
-        if second.button("🔎 분석", key=f"rank_{'up' if positive else 'down'}_{row.종목코드}",
+        if second.button("🔎 분석", key=f"rank_{'up' if positive else 'down'}_{code}",
                          use_container_width=True):
-            _go_analyze(row.종목코드)
+            _go_analyze(code)
 
 
 st.markdown(
