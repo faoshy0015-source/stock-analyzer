@@ -22,6 +22,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests beautifulsoup4 pillow pytest
       - name: Check Python syntax
-        run: python -m compileall -q app.py pages/ app_navigation.py naver_valuation.py data_sources.py scoring.py valuation_model.py valuation_context.py valuation_sources.py report.py analyst_reports.py event_momentum.py financial_health_model.py flow_model.py consensus_targets.py access_gate.py score_table.py trade_plan.py proposal_visuals.py
+        run: python -m compileall -q app.py pages/ app_navigation.py trading_sidebar.py naver_valuation.py data_sources.py scoring.py valuation_model.py valuation_context.py valuation_sources.py report.py analyst_reports.py event_momentum.py financial_health_model.py flow_model.py consensus_targets.py access_gate.py score_table.py trade_plan.py proposal_visuals.py
       - name: Run unit tests
         run: python -m pytest -q tests/
