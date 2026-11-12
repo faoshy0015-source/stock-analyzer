@@ -110,9 +110,12 @@ def test_forecast_per_uses_annual_eps_not_bps(monkeypatch):
         raise AssertionError(url)
 
     monkeypatch.setattr(module.requests, "get", fake_get)
-    monkeypatch.setattr(module.datetime, "now",
-                        lambda tz=None: __import__("datetime").datetime(2026,11,12,
-                                                                            10,30,tzinfo=tz))
+    from datetime import datetime as RealDateTime
+    class FixedDateTime:
+        @staticmethod
+        def now(tz=None):
+            return RealDateTime(2026, 11, 12, 10, 30, tzinfo=tz)
+    monkeypatch.setattr(module, "datetime", FixedDateTime)
     result = fetch_naver_valuation("005930")
     assert result["annual_forecasts"][2026]["eps"] == 45655
     assert result["annual_forecasts"][2026]["bps"] == 108381
