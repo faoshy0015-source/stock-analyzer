@@ -472,7 +472,7 @@ def earnings_top_panel_html(rows):
             parts.append(
                 f'<div style="display:flex;justify-content:space-between;gap:6px;padding:4px 0;'
                 f'border-bottom:1px solid #E0EBE6;">'
-                f'<span style="color:#29483D;font-weight:750;">{medals[i]}&nbsp; {r["name"]}</span>'
+                f'<span style="color:#29483D;font-weight:750;">{medals[i]}&nbsp; {html.escape(str(r["name"]))}</span>'
                 f'<span style="color:#D73749;font-weight:900;">+{r["score"]}점</span></div>'
             )
         body=''.join(parts)
@@ -507,7 +507,8 @@ def public_market_quote(symbol):
     return cur,rate
 
 def market_panel_html(items):
-    valid_rates=[r for _,_,r in items if r is not None]
+    # The FX rate is context, not a stock-market breadth indicator.
+    valid_rates=[r for label,_,r in items if r is not None and label!="USD/KRW"]
     avg=sum(valid_rates)/len(valid_rates) if valid_rates else 0
     mood="🟢 강세" if avg>=0.5 else ("🔴 약세" if avg<=-0.5 else "⚪ 중립")
     rows=[]
