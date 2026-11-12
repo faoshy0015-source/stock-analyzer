@@ -42,14 +42,16 @@ def test_bad_missing_value_does_not_become_zero_or_estimate():
     assert _raw_finite("n/a") is None
 
 
-def test_app_displays_source_date_and_does_not_scrape_npay_financial_sidebar():
+def test_app_keeps_krx_data_separate_from_npay_consensus():
     source=(Path(__file__).resolve().parents[1]/"app.py").read_text(encoding="utf-8")
     assert "valuation_context.get('krx_eps')" in source
     assert "valuation_context.get('krx_bps')" in source
     assert "valuation_context.get('krx_dps')" in source
     assert "valuation_context.get('krx_dividend_yield')" in source
-    assert "조회 기준일 {krx_date}" in source
-    assert "('추정 EPS (Yahoo 추정 · 별도 기준)',profile.get('forwardEps')" in source
+    assert "KRX/pykrx · 기준일 " in source
+    assert "npay.get('annual_forecasts')" in source
+    assert "('추정 EPS (Yahoo 추정 · 12M)',profile.get('forwardEps')" in source
+    assert "st.expander('📚 한국거래소(KRX) 투자지표" in source
 
 
 
