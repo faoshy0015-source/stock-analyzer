@@ -18,11 +18,11 @@ import streamlit as st
 from access_gate import require_login
 from app_navigation import render_navigation
 from data_sources import SEED
-from market_calendar import render_market_calendar
 
 st.set_page_config(page_title="시장 대시보드 · Stock Analyzer",
                    page_icon="📊", layout="wide")
 require_login(st)
+from market_calendar import render_market_calendar
 render_navigation(st)
 
 # Deliberately small, disclosed sample basket: not market-wide rankings.
