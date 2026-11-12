@@ -17,3 +17,6 @@ def render_navigation(st):
         st.page_link("pages/1_수급_전환_검색.py",
                      label="수급 전환 검색", icon="🔄")
         st.divider()
+    # Always render after each page's require_login() call; no new login needed.
+    from trading_sidebar import render_trading_sidebar
+    render_trading_sidebar()
