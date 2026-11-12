@@ -223,33 +223,133 @@ m3.metric("최강세 업종", str(sector.iloc[0]["업종"]),
 m4.metric("시세 확인 종목", f"{len(quotes)}개")
 
 st.subheader("🟩 업종별 주식 모멘텀 히트맵")
-st.caption("업종에 속한 조회 성공 종목의 등락률 단순평균 · 녹색 상승 / 빨간색 하락 · "
-           "타일 크기는 등락폭을 반영(최소 면적 보정) · 시가총액 가중 아님")
+st.caption(
+    "조회된 주요 종목의 업종별 등락률 단순평균 · 녹색 상승 / 빨간색 하락 · "
+    "타일 면적은 등락폭 반영(최소 면적 보정) · 공식 업종지수 아님"
+)
 
-fig = go.Figure(go.Treemap(
-    ids=["industry/" + x for x in sector["업종"]],
-    labels=sector["업종"].tolist(),
-    parents=[""] * len(sector),
-    values=(sector["평균등락률"].abs() + .35).tolist(),
-    text=[f"{name}<br>{pct:+.2f}%"
-          for name, pct in zip(sector["업종"], sector["평균등락률"])],
-    textinfo="text",
-    textfont=dict(color="white", size=16),
-    customdata=sector[["평균등락률", "종목수"]].to_numpy(),
-    hovertemplate="%{label}<br>평균 등락률 %{customdata[0]:+.2f}%"
-                  "<br>표본 종목 %{customdata[1]}개<extra></extra>",
-    marker=dict(colors=[_tile_color(x) for x in sector["평균등락률"]],
-                line=dict(color="#f4f8f7", width=3)),
-    tiling=dict(packing="squarify", pad=3),
-    sort=False,
-    pathbar=dict(visible=False),
-))
-fig.update_layout(margin=dict(l=0, r=0, t=1, b=0), height=405,
-                  paper_bgcolor="rgba(0,0,0,0)")
-# Plotly treemap zoom is not relied on for selection; an explicit sector picker
-# below works reliably on desktop and mobile.
-st.plotly_chart(fig, use_container_width=True,
-                config={"displayModeBar": False})
+selection_key = "stock_dashboard_clicked_sector"
+selection_version_key = "stock_dashboard_heatmap_version"
+sector_names = set(sector["업종"].astype(str))
+selected_sector = st.session_state.get(selection_key)
+if selected_sector not in sector_names:
+    selected_sector = None
+    st.session_state.pop(selection_key, None)
+
+if selected_sector is None:
+    st.markdown(
+        '<div class="stock-dashboard-hint">'
+        '👇 <b>업종 네모칸을 클릭하세요!</b> '
+        '클릭한 업종의 <b>종목 등락률 TOP 5</b>를 보여드립니다.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    # Plotly's default treemap click only zooms one large tile.
+    # Instead, use Streamlit's hierarchical chart click event to render
+    # a separately controlled rank view. Never rely on Plotly's zoom state.
+    fig = go.Figure(go.Treemap(
+        ids=["industry/" + str(name) for name in sector["업종"]],
+        labels=sector["업종"].tolist(),
+        parents=[""] * len(sector),
+        values=(sector["평균등락률"].abs() + .35).tolist(),
+        text=[f"{name} ↗<br>{float(pct):+.2f}%"
+              for name, pct in zip(sector["업종"], sector["평균등락률"])],
+        textinfo="text",
+        textfont=dict(color="white", size=16),
+        customdata=sector[["평균등락률", "종목수"]].to_numpy(),
+        hovertemplate="%{label}<br>평균 등락률 %{customdata[0]:+.2f}%"
+                      "<br>확인된 종목 %{customdata[1]}개"
+                      "<br>클릭: 종목 등락률 TOP 5<extra></extra>",
+        marker=dict(colors=[_tile_color(x) for x in sector["평균등락률"]],
+                    line=dict(color="#f4f8f7", width=3)),
+        tiling=dict(packing="squarify", pad=3),
+        pathbar=dict(visible=False),
+        maxdepth=1,
+        sort=False,
+    ))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=1, b=0), height=405,
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    selection = st.plotly_chart(
+        fig, use_container_width=True,
+        config={"displayModeBar": False},
+        key=f"stock_sector_heatmap_{scope}_{st.session_state.get(selection_version_key, 0)}",
+        on_select="rerun",
+        selection_mode="points",
+    )
+    try:
+        points = selection["selection"]["points"]
+    except (TypeError, KeyError, AttributeError):
+        points = []
+    if points:
+        hit = points[0]
+        hit_id = str(hit.get("id") or "")
+        hit_label = str(hit.get("label") or "")
+        clicked_sector = (hit_id[len("industry/"):]
+                          if hit_id.startswith("industry/") else hit_label)
+        if clicked_sector in sector_names:
+            st.session_state[selection_key] = clicked_sector
+            st.session_state["stock_dashboard_sector"] = clicked_sector
+            st.rerun()
+else:
+    title, back = st.columns([4, 1], vertical_alignment="center")
+    with title:
+        avg = float(sector.loc[
+            sector["업종"] == selected_sector, "평균등락률"
+        ].iloc[0])
+        st.markdown(f"#### 🔎 {escape(selected_sector)} · 종목 등락률 TOP 5")
+        st.caption(f"업종 표본 평균 {avg:+.2f}% · 조회된 종목 중 등락률 높은 순")
+    with back:
+        if st.button("← 전체 업종으로", use_container_width=True,
+                     key="stock_heatmap_back"):
+            st.session_state.pop(selection_key, None)
+            st.session_state[selection_version_key] = (
+                st.session_state.get(selection_version_key, 0) + 1
+            )
+            st.rerun()
+
+    leaders = (quotes.loc[quotes["업종"] == selected_sector]
+               .sort_values("등락률(%)", ascending=False).head(5))
+    if leaders.empty:
+        st.warning("선택 업종에서 확인된 종목 시세가 없습니다.")
+    else:
+        # Streamlit buttons provide a reliable direct route to Analyze.
+        # Display a maximum of three cards per row for mobile readability.
+        for offset in range(0, len(leaders), 3):
+            group = leaders.iloc[offset:offset + 3]
+            columns = st.columns(3, gap="small")
+            for i, (_, item) in enumerate(group.iterrows(), start=offset + 1):
+                name = str(item["종목명"])
+                code = str(item["종목코드"])
+                price = int(item["현재가(원)"])
+                pct = float(item["등락률(%)"])
+                color = _tile_color(pct)
+                with columns[(i - 1) % 3]:
+                    st.markdown(
+                        '<div style="background:' + color + ';color:white;'
+                        'padding:13px;border-radius:9px;height:143px;'
+                        'display:flex;flex-direction:column;justify-content:space-between;'
+                        'box-sizing:border-box;">'
+                        '<div style="font-size:12px;opacity:.90;">'
+                        + str(i) + '위 · ' + escape(code) + '</div>'
+                        '<div style="font-size:17px;font-weight:750;line-height:1.3;">'
+                        + escape(name) + '</div>'
+                        '<div style="font-size:20px;font-weight:800;">'
+                        + f"{pct:+.2f}%" + '</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(f"현재가 {price:,}원 · 지연 시세 가능")
+                    if st.button(
+                        "🔎 Analyze 상세 분석",
+                        key=f"stock_sector_analyze_{code}",
+                        use_container_width=True,
+                    ):
+                        _go_analyze(code)
+        st.caption(
+            "상위 종목은 30개 주요 종목 표본에서 해당 업종으로 분류된 "
+            "조회 성공 종목만 비교한 결과입니다. 전종목 순위가 아닙니다."
+        )
 
 st.markdown('<div class="stock-dashboard-hint">🔎 관심 업종을 선택해 '
             '종목별 등락률을 비교하거나, 아래 종목의 <b>분석</b> 버튼으로 '
