@@ -75,7 +75,7 @@ def test_trading_sidebar_keeps_top40_20_5_and_no_order_endpoint():
     assert ".head(40)" in SOURCE
     assert "reverse=True)[:20]" in SOURCE
     assert "return results[:5], \"\"" in SOURCE
-    assert "n av er" not in SOURCE
+    assert "from hanavtrading" not in SOURCE  # independent of the old app runtime
     assert "FHKST01010100" in SOURCE
     assert "/quotations/inquire-price" in SOURCE
     assert "/trading/order" not in SOURCE
