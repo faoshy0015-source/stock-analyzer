@@ -18,6 +18,7 @@ import streamlit as st
 from access_gate import require_login
 from app_navigation import render_navigation
 from data_sources import SEED
+from market_calendar import render_market_calendar
 
 st.set_page_config(page_title="시장 대시보드 · Stock Analyzer",
                    page_icon="📊", layout="wide")
@@ -403,5 +404,11 @@ with st.expander("📋 전체 모니터링 종목 보기", expanded=False):
             "등락률(%)": st.column_config.NumberColumn(format="%+.2f")
         },
     )
+# Market-wide calendar is independent of the selected stock's analysis view.
+render_market_calendar(
+    selected_code=str(selected_code),
+    selected_name=str(BASKET.get(selected_code, {}).get("종목명", "")),
+)
+
 st.caption("CREATED BY K.H.AHN · 시장 대시보드는 투자 참고용이며, "
            "개별 종목 분석과 매매 판단은 별도로 검토해야 합니다.")
