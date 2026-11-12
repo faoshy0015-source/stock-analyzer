@@ -9,6 +9,8 @@ from __future__ import annotations
 
 def render_navigation(st):
     with st.sidebar:
+        st.page_link("pages/2_시장_대시보드.py",
+                     label="시장 대시보드", icon="📊")
         st.page_link("app.py", label="Analyze", icon="🔎")
         st.page_link("pages/0_전종목_수급_레이더.py",
                      label="전종목 수급 레이더", icon="📡")
