@@ -59,5 +59,8 @@ def test_user_controls_and_source_caveats_preserved():
     assert "Nasdaq Calendar" in CAL
     assert "Bullstory" in CAL
     assert "공식 확정 일정이 아닐 수 있습니다" in CAL
-    assert 'st.markdown("**🏢 주요 기업 실적 발표**")' in CAL
-    assert 'st.markdown("**🌐 주요 매크로 발표**")' in CAL
+    assert 'earnings_tab, macro_tab = st.tabs([' in CAL
+    assert '"🏢 주요 기업 실적 발표", "🌐 주요 매크로 발표"' in CAL
+    assert 'with earnings_tab:' in CAL and 'with macro_tab:' in CAL
+    assert 'left, right = st.columns([1.28, 1.0]' not in CAL
+    assert 'st.dataframe(' in CAL
