@@ -181,12 +181,12 @@ def fetch_naver_valuation(code):
         response.raise_for_status()
         values = parse_naver_integration(response.json())
         if not values:
-            result["error"] = "Npay 투자지표 응답에 유효한 PER·EPS·PBR·BPS 정보가 없습니다."
-            return result
-        result.update(values)
+            result["error"] = "Npay 현재 투자지표 응답에 유효한 PER·EPS·PBR·BPS 정보가 없습니다."
+        else:
+            result.update(values)
     except (requests.exceptions.RequestException, ValueError, TypeError) as exc:
-        result["error"] = "Npay 투자지표 연결 실패 (" + type(exc).__name__ + ")"
-        return result
+        result["error"] = "Npay 현재 투자지표 연결 실패 (" + type(exc).__name__ + ")"
+    # Annual forecasts are independent: even if integration fails, try annual.
 
     # Annual consensus has a different basis from trailing EPS/BPS.
     # It is never substituted into the historical/current valuation fields.
