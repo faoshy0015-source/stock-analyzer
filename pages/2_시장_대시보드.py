@@ -421,6 +421,7 @@ m4.metric("시세 확인 종목", f"{len(quotes)}개")
 # Foreign net trading and motivations are not inferred from selected-stock prices.
 headlines = _today_market_news()
 brief, brief_sources = _narrative_market_brief(quotes, sector, scope, headlines)
+analysis_at = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S KST")
 news_links = ' · '.join(
     '<a href="' + escape(item["url"], quote=True) + '" target="_blank" rel="noopener noreferrer">'
     + escape(item["source"] or "관련 기사") + '</a>'
@@ -429,7 +430,7 @@ news_links = ' · '.join(
 st.markdown(
     '<div class="stock-market-brief">'
     '<div class="stock-market-brief-title">📰 국내 증시 시황 코멘트'
-    '<small>새로고침 시 최신 뉴스 반영</small></div>'
+    '<small>마지막 분석: ' + escape(analysis_at) + '</small></div>'
     + ''.join('<div class="stock-market-brief-line">' + escape(line) + '</div>'
               for line in brief)
     + ('<div class="stock-market-newslinks">관련 기사: ' + news_links + '</div>'
