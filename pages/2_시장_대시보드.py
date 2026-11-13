@@ -6,8 +6,12 @@ Naver public quotes can be delayed; request time is not execution timestamp.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import escape
+from email.utils import parsedate_to_datetime
+from urllib.parse import urlparse
+from xml.etree import ElementTree as ET
+import re
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -64,8 +68,10 @@ st.markdown("""
  padding:12px 16px;margin:18px 0 17px;box-shadow:0 2px 8px rgba(21,84,72,.045)}
 .stock-market-brief-title{font-size:15px;font-weight:850;color:#175447;margin-bottom:5px}
 .stock-market-brief-title small{font-size:11px;font-weight:500;color:#698077;margin-left:8px}
-.stock-market-brief-line{font-size:13px;color:#294b40;line-height:1.7}
-.stock-market-brief-source{font-size:11px;color:#65796f;margin-top:5px}
+.stock-market-brief-line{font-size:14px;color:#294b40;line-height:1.7;margin:4px 0}
+.stock-market-brief-source{font-size:11px;color:#65796f;margin-top:8px}
+.stock-market-newslinks{font-size:11px;color:#57776a;line-height:1.6;margin-top:5px}
+.stock-market-newslinks a{color:#087965;text-decoration:underline;text-underline-offset:2px}
 </style>
 """, unsafe_allow_html=True)
 
@@ -144,6 +150,166 @@ def _market_quotes():
             "등락률(%)": round(change, 2),
         })
     return pd.DataFrame(rows), _now_kst()
+
+
+
+@st.cache_data(ttl=180, show_spinner=False)
+def _today_market_news():
+    """Fresh dated Korean market headlines. Unavailable news stays unavailable."""
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    queries = (
+        "코스피 외국인 when:1d",
+        "코스피 엔비디아 when:1d",
+        "코스피 차익실현 장중 when:1d",
+        "국내 증시 미국 금리 유가 when:1d",
+    )
+
+    def read_feed(query):
+        try:
+            response = requests.get(
+                "https://news.google.com/rss/search",
+                params={"q": query, "hl": "ko", "gl": "KR", "ceid": "KR:ko"},
+                headers={"User-Agent": "Mozilla/5.0 (compatible; StockMarketPulse/1.0)"},
+                timeout=(3, 7),
+            )
+            response.raise_for_status()
+            root = ET.fromstring(response.content[:500000])
+            items = []
+            for item in root.findall(".//channel/item")[:20]:
+                title = (item.findtext("title") or "").strip()
+                url = (item.findtext("link") or "").strip()
+                src_tag = item.find("source")
+                source = (src_tag.text or "").strip() if src_tag is not None else ""
+                try:
+                    published = parsedate_to_datetime(item.findtext("pubDate") or "")
+                    published = published.astimezone(ZoneInfo("Asia/Seoul"))
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if (not title or not url.startswith("https://")
+                        or published < now - timedelta(hours=30)
+                        or published > now + timedelta(minutes=10)):
+                    continue
+                items.append({"title": title, "source": source,
+                              "url": url, "published": published})
+            return items
+        except (requests.RequestException, ET.ParseError, ValueError, TypeError):
+            return []
+
+    found = []
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(read_feed, query) for query in queries]
+        for future in as_completed(futures):
+            try:
+                found.extend(future.result())
+            except Exception:
+                pass
+    dedup = {}
+    for item in found:
+        # The same syndicated headline can appear across RSS queries.
+        key = re.sub(r"\\s+", "", item["title"]).lower()
+        if key not in dedup or item["published"] > dedup[key]["published"]:
+            dedup[key] = item
+    return sorted(dedup.values(), key=lambda row: row["published"], reverse=True)
+
+
+def _narrative_market_brief(frame, grouped, market_scope, headlines):
+    """Three prose lines. Never attribute a motive to foreign trading without evidence."""
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    todays = [row for row in headlines if row["published"].date() == now.date()]
+    relevant = [row for row in todays
+                if any(word in row["title"] for word in (
+                    "코스피", "코스닥", "국내 증시", "국내증시", "주식시장", "한국 증시"))]
+    if not relevant:
+        relevant = todays
+
+    def news_for(*terms):
+        return [row for row in relevant
+                if any(term in row["title"] for term in terms)]
+
+    nvidia = news_for("엔비디아", "젠슨 황")
+    rates = news_for("미국 국채", "미 국채", "국채금리", "美금리", "미국 금리")
+    prices = news_for("물가", "PPI", "국제유가", "유가 상승")
+    profit = news_for("차익실현", "차익 매물", "차익 매도")
+
+    evidence = []
+    if nvidia:
+        evidence.append("엔비디아 관련 불확실성")
+    if rates:
+        evidence.append("미국 금리 부담")
+    if prices and len(evidence) < 2:
+        evidence.append("미국 물가·유가 경계감")
+    if evidence:
+        if len(evidence) == 1:
+            first = f"오늘 보도에서는 {evidence[0]}이 국내 증시 변동성의 주요 요인으로 거론됩니다."
+        else:
+            first = (f"{evidence[0]}과 {evidence[1]}이 겹치면서 "
+                     "국내 증시의 반등 지속 여부에 대한 경계가 이어지고 있습니다.")
+    elif relevant:
+        first = ("당일 시장 보도에서 뚜렷하게 교차 확인되는 단일 악재는 없으며, "
+                 "지수와 주요 업종의 방향이 일치하는지 확인할 필요가 있습니다.")
+    else:
+        first = "오늘의 시장 뉴스를 확인하지 못해 지수 변동의 직접적인 원인을 단정하기 어렵습니다."
+
+    # Trading-side claims require a same-day, post-opening news headline.
+    # Exclude premarket forecasts, questions and yesterday's flow.
+    flow_news = []
+    for item in relevant:
+        title = item["title"]
+        if item["published"].hour < 9 or (now - item["published"]) > timedelta(hours=5):
+            continue
+        if any(term in title for term in ("전망", "예상", "우려", "가능성", "관건",
+                                         "주시", "주목", "전날", "어제", "?", "？")):
+            continue
+        if not re.search(r"(외국인|외인)", title):
+            continue
+        if re.search(r"(외국인|외인).{0,10}(순매도|매도세|매도 우위|팔자)", title):
+            flow_news.append(("sell", item))
+        elif re.search(r"(외국인|외인).{0,10}(순매수|매수세|매수 우위|사자)", title):
+            flow_news.append(("buy", item))
+    flow_news.sort(key=lambda obj: obj[1]["published"], reverse=True)
+    selected = [row for row in nvidia[:1] + rates[:1] + prices[:1]]
+    if flow_news:
+        signal, story = flow_news[0]
+        selected.insert(0, story)
+        if signal == "sell":
+            second = ("장중 보도에서 외국인 매도 우위가 포착돼 수급 부담이 부각되고 있습니다."
+                      if not profit else
+                      "장중 외국인 매도와 차익실현 매물이 함께 거론되며 반등 탄력을 제약하는 모습입니다.")
+        else:
+            second = ("장중 보도에서는 외국인 매수 우위가 확인돼 수급 측면의 방어력이 나타나지만, "
+                      "이 흐름의 지속 여부는 지켜봐야 합니다.")
+    elif profit:
+        selected.append(profit[0])
+        second = ("반등 과정에서 차익실현 매물에 대한 경계가 제기되지만, "
+                  "외국인의 당일 순매매나 구체적인 매매 목적은 별도로 확인해야 합니다.")
+    elif relevant:
+        selected.append(relevant[0])
+        second = ("외국인 수급과 반도체 대형주의 움직임이 반등의 지속성을 좌우할 변수로 꼽힙니다. "
+                  "다만 외국인 매매 방향의 최신 확인치는 확보되지 않았습니다.")
+    else:
+        second = ("외국인·기관의 장중 순매매는 이 화면에서 직접 집계하지 않으므로 "
+                  "매도 주체나 차익실현 여부를 추정하지 않습니다.")
+
+    up = int((frame["등락률(%)"] > 0).sum())
+    down = int((frame["등락률(%)"] < 0).sum())
+    leader = grouped.iloc[0]
+    laggard = grouped.iloc[-1]
+    spread = "상승보다 하락 종목이 많고" if down > up else (
+        "하락보다 상승 종목이 많고" if up > down else "상승과 하락 종목 수가 비슷하고")
+    sample_name = "주요 종목 표본" if market_scope == "전체" else f"주요 {market_scope} 표본"
+    third = (f"{sample_name}에서는 {spread}, {leader['업종']} 업종이 상대적으로 강한 반면 "
+             f"{laggard['업종']} 업종은 약해 업종 간 흐름이 차별화되고 있습니다.")
+
+    unique_links = []
+    seen = set()
+    for item in selected + relevant:
+        if len(unique_links) >= 3:
+            break
+        if item["url"] in seen or item["published"].date() != now.date():
+            continue
+        seen.add(item["url"])
+        unique_links.append(item)
+    return (first, second, third), unique_links
 
 
 def _index_brief(symbol, label):
@@ -234,6 +400,7 @@ with c2:
                  key="stock_dashboard_refresh"):
         _market_quotes.clear()
         public_market_quote.clear()
+        _today_market_news.clear()
         st.rerun()
 
 with st.spinner("주요 종목의 최신 시세 조회 중..."):
@@ -272,18 +439,26 @@ m3.metric("최강세 업종", str(sector.iloc[0]["업종"]),
           f'{float(sector.iloc[0]["평균등락률"]):+.2f}%')
 m4.metric("시세 확인 종목", f"{len(quotes)}개")
 
-# Three short, quote-based lines: indices, selected-stock breadth, sector dispersion.
-# Request time is not a trade timestamp, and the sample is not the whole market.
-brief = _market_brief_lines(quotes, sector, scope)
+# Narrative synthesizes fresh dated headlines with verified selected-stock prices.
+# Foreign net trading and motivations are not inferred from selected-stock prices.
+headlines = _today_market_news()
+brief, brief_sources = _narrative_market_brief(quotes, sector, scope, headlines)
+news_links = ' · '.join(
+    '<a href="' + escape(item["url"], quote=True) + '" target="_blank" rel="noopener noreferrer">'
+    + escape(item["source"] or "관련 기사") + '</a>'
+    for item in brief_sources
+)
 st.markdown(
     '<div class="stock-market-brief">'
-    '<div class="stock-market-brief-title">📌 국내 증시 시황 요약'
-    '<small>최신 시세 새로고침 시 재계산</small></div>'
+    '<div class="stock-market-brief-title">📰 국내 증시 시황 코멘트'
+    '<small>새로고침 시 최신 뉴스 반영</small></div>'
     + ''.join('<div class="stock-market-brief-line">' + escape(line) + '</div>'
               for line in brief)
+    + ('<div class="stock-market-newslinks">관련 기사: ' + news_links + '</div>'
+       if news_links else '')
     + '<div class="stock-market-brief-source">'
-    '출처: Yahoo Finance 지수 일별 시세 · 네이버 금융 주요 종목 공개 시세 / 지연 가능'
-    ' · 장 종료·휴장 시 최근 거래일 자료 · 전종목·공식 업종지수 아님'
+    '당일 보도 제목과 네이버 금융 주요 종목 표본을 바탕으로 한 자동 해석 · '
+    '실시간 투자주체별 순매매 직접 집계 아님 · 뉴스/시세 지연 가능 · 매매 목적 추정 금지'
     '</div></div>',
     unsafe_allow_html=True,
 )
