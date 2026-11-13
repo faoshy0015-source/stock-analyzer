@@ -206,7 +206,7 @@ def _today_market_news():
     dedup = {}
     for item in found:
         # The same syndicated headline can appear across RSS queries.
-        key = re.sub(r"\\s+", "", item["title"]).lower()
+        key = re.sub(r"\s+", "", item["title"]).lower()
         if key not in dedup or item["published"] > dedup[key]["published"]:
             dedup[key] = item
     return sorted(dedup.values(), key=lambda row: row["published"], reverse=True)
@@ -230,14 +230,20 @@ def _narrative_market_brief(frame, grouped, market_scope, headlines):
     rates = news_for("미국 국채", "미 국채", "국채금리", "美금리", "미국 금리")
     prices = news_for("물가", "PPI", "국제유가", "유가 상승")
     profit = news_for("차익실현", "차익 매물", "차익 매도")
+    reversal = news_for("상승폭 반납", "상승분 반납", "반등 실패", "하락 전환",
+                        "상승폭 축소", "오전 반등")
 
     evidence = []
     if nvidia:
-        evidence.append("엔비디아 관련 불확실성")
+        risk_news = any(any(term in row["title"] for term in (
+            "불확실", "사임", "해임", "퇴임", "리스크", "급락", "논란")) for row in nvidia)
+        evidence.append("엔비디아 관련 불확실성" if risk_news else "엔비디아 관련 이슈")
     if rates:
-        evidence.append("미국 금리 부담")
+        risk_rates = any(any(term in row["title"] for term in (
+            "상승", "급등", "경계", "부담", "고금리")) for row in rates)
+        evidence.append("미국 금리 부담" if risk_rates else "미국 금리 움직임")
     if prices and len(evidence) < 2:
-        evidence.append("미국 물가·유가 경계감")
+        evidence.append("미국 물가·유가 변수")
     if evidence:
         if len(evidence) == 1:
             first = f"오늘 보도에서는 {evidence[0]}이 국내 증시 변동성의 주요 요인으로 거론됩니다."
@@ -272,9 +278,21 @@ def _narrative_market_brief(frame, grouped, market_scope, headlines):
         signal, story = flow_news[0]
         selected.insert(0, story)
         if signal == "sell":
-            second = ("장중 보도에서 외국인 매도 우위가 포착돼 수급 부담이 부각되고 있습니다."
-                      if not profit else
-                      "장중 외국인 매도와 차익실현 매물이 함께 거론되며 반등 탄력을 제약하는 모습입니다.")
+            if reversal and profit:
+                second = ("오전 반등 뒤 상승폭을 반납하는 흐름 속에 외국인 매도 우위와 "
+                          "차익실현 매물이 거론되면서 시장의 반등 탄력이 약해지고 있습니다.")
+                selected.append(reversal[0])
+                selected.append(profit[0])
+            elif reversal:
+                second = ("오전 반등 뒤 상승폭이 줄어든 가운데, 장중 보도에서 확인된 "
+                          "외국인 매도 우위가 지수에 부담을 주는 모습입니다.")
+                selected.append(reversal[0])
+            elif profit:
+                second = ("장중 외국인 매도와 차익실현 매물이 함께 거론되며 "
+                          "반등 탄력을 제약하는 모습입니다.")
+                selected.append(profit[0])
+            else:
+                second = "장중 보도에서 외국인 매도 우위가 포착돼 수급 부담이 부각되고 있습니다."
         else:
             second = ("장중 보도에서는 외국인 매수 우위가 확인돼 수급 측면의 방어력이 나타나지만, "
                       "이 흐름의 지속 여부는 지켜봐야 합니다.")
@@ -310,46 +328,6 @@ def _narrative_market_brief(frame, grouped, market_scope, headlines):
         seen.add(item["url"])
         unique_links.append(item)
     return (first, second, third), unique_links
-
-
-def _index_brief(symbol, label):
-    """Latest available daily index quote; never label it as an execution-time tick."""
-    try:
-        value, rate = public_market_quote(symbol)
-        if value is None or rate is None or pd.isna(value) or pd.isna(rate):
-            raise ValueError("index value or percentage missing")
-        return f"{label} {float(value):,.2f} ({float(rate):+.2f}%)", float(rate)
-    except (ValueError, TypeError, KeyError, requests.RequestException):
-        return f"{label} 시세 미확인", None
-
-
-def _market_brief_lines(frame, grouped, market_scope):
-    kospi, kr = _index_brief("^KS11", "KOSPI")
-    kosdaq, kd = _index_brief("^KQ11", "KOSDAQ")
-    if kr is None or kd is None:
-        direction = "지수별 방향 확인 제한"
-    elif kr > 0 and kd > 0:
-        direction = "양 시장 동반 상승"
-    elif kr < 0 and kd < 0:
-        direction = "양 시장 동반 하락"
-    elif kr == 0 and kd == 0:
-        direction = "양 시장 보합"
-    else:
-        direction = "양 시장 흐름 엇갈림"
-    first = f"{kospi} · {kosdaq} — {direction}."
-
-    up = int((frame["등락률(%)"] > 0).sum())
-    down = int((frame["등락률(%)"] < 0).sum())
-    flat = len(frame) - up - down
-    balance = "상승 우위" if up > down else ("하락 우위" if down > up else "상승·하락 균형")
-    sample = "주요 종목 전체 표본" if market_scope == "전체" else f"주요 {market_scope} 종목 표본"
-    second = (f"{sample} {len(frame)}개 중 상승 {up}개·하락 {down}개·보합 {flat}개로 "
-              f"{balance}입니다.")
-
-    leader, laggard = grouped.iloc[0], grouped.iloc[-1]
-    third = (f"업종별 단순평균은 {leader['업종']} {float(leader['평균등락률']):+.2f}%가 가장 높고, "
-             f"{laggard['업종']} {float(laggard['평균등락률']):+.2f}%가 가장 낮습니다.")
-    return (first, second, third)
 
 
 def _tile_color(value):
