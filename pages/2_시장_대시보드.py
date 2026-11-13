@@ -18,6 +18,7 @@ import streamlit as st
 from access_gate import require_login
 from app_navigation import render_navigation
 from data_sources import SEED
+from trading_sidebar import public_market_quote
 
 st.set_page_config(page_title="시장 대시보드 · Stock Analyzer",
                    page_icon="📊", layout="wide")
@@ -58,6 +59,13 @@ st.markdown("""
 .stock-dashboard-hint{border:1px solid #c3e2d3;border-radius:9px;
  background:#ebf7f0;padding:11px 15px;color:#235b48;font-size:14px;
  font-weight:650;margin:12px 0}
+.stock-market-brief{border:1px solid #c7e0d4;border-left:5px solid #e87d31;
+ background:linear-gradient(110deg,#fffefa 0%,#eef8f2 100%);border-radius:10px;
+ padding:12px 16px;margin:18px 0 17px;box-shadow:0 2px 8px rgba(21,84,72,.045)}
+.stock-market-brief-title{font-size:15px;font-weight:850;color:#175447;margin-bottom:5px}
+.stock-market-brief-title small{font-size:11px;font-weight:500;color:#698077;margin-left:8px}
+.stock-market-brief-line{font-size:13px;color:#294b40;line-height:1.7}
+.stock-market-brief-source{font-size:11px;color:#65796f;margin-top:5px}
 </style>
 """, unsafe_allow_html=True)
 
@@ -138,6 +146,46 @@ def _market_quotes():
     return pd.DataFrame(rows), _now_kst()
 
 
+def _index_brief(symbol, label):
+    """Latest available daily index quote; never label it as an execution-time tick."""
+    try:
+        value, rate = public_market_quote(symbol)
+        if value is None or rate is None or pd.isna(value) or pd.isna(rate):
+            raise ValueError("index value or percentage missing")
+        return f"{label} {float(value):,.2f} ({float(rate):+.2f}%)", float(rate)
+    except (ValueError, TypeError, KeyError, requests.RequestException):
+        return f"{label} 시세 미확인", None
+
+
+def _market_brief_lines(frame, grouped, market_scope):
+    kospi, kr = _index_brief("^KS11", "KOSPI")
+    kosdaq, kd = _index_brief("^KQ11", "KOSDAQ")
+    if kr is None or kd is None:
+        direction = "지수별 방향 확인 제한"
+    elif kr > 0 and kd > 0:
+        direction = "양 시장 동반 상승"
+    elif kr < 0 and kd < 0:
+        direction = "양 시장 동반 하락"
+    elif kr == 0 and kd == 0:
+        direction = "양 시장 보합"
+    else:
+        direction = "양 시장 흐름 엇갈림"
+    first = f"{kospi} · {kosdaq} — {direction}."
+
+    up = int((frame["등락률(%)"] > 0).sum())
+    down = int((frame["등락률(%)"] < 0).sum())
+    flat = len(frame) - up - down
+    balance = "상승 우위" if up > down else ("하락 우위" if down > up else "상승·하락 균형")
+    sample = "주요 종목 전체 표본" if market_scope == "전체" else f"주요 {market_scope} 종목 표본"
+    second = (f"{sample} {len(frame)}개 중 상승 {up}개·하락 {down}개·보합 {flat}개로 "
+              f"{balance}입니다.")
+
+    leader, laggard = grouped.iloc[0], grouped.iloc[-1]
+    third = (f"업종별 단순평균은 {leader['업종']} {float(leader['평균등락률']):+.2f}%가 가장 높고, "
+             f"{laggard['업종']} {float(laggard['평균등락률']):+.2f}%가 가장 낮습니다.")
+    return (first, second, third)
+
+
 def _tile_color(value):
     value = float(value)
     if value > 0:
@@ -185,6 +233,7 @@ with c2:
     if st.button("🔄 최신 시세 새로고침", use_container_width=True,
                  key="stock_dashboard_refresh"):
         _market_quotes.clear()
+        public_market_quote.clear()
         st.rerun()
 
 with st.spinner("주요 종목의 최신 시세 조회 중..."):
@@ -222,6 +271,22 @@ m2.metric("하락 종목", f"{count_down}개")
 m3.metric("최강세 업종", str(sector.iloc[0]["업종"]),
           f'{float(sector.iloc[0]["평균등락률"]):+.2f}%')
 m4.metric("시세 확인 종목", f"{len(quotes)}개")
+
+# Three short, quote-based lines: indices, selected-stock breadth, sector dispersion.
+# Request time is not a trade timestamp, and the sample is not the whole market.
+brief = _market_brief_lines(quotes, sector, scope)
+st.markdown(
+    '<div class="stock-market-brief">'
+    '<div class="stock-market-brief-title">📌 국내 증시 시황 요약'
+    '<small>최신 시세 새로고침 시 재계산</small></div>'
+    + ''.join('<div class="stock-market-brief-line">' + escape(line) + '</div>'
+              for line in brief)
+    + '<div class="stock-market-brief-source">'
+    '출처: Yahoo Finance 지수 일별 시세 · 네이버 금융 주요 종목 공개 시세 / 지연 가능'
+    ' · 장 종료·휴장 시 최근 거래일 자료 · 전종목·공식 업종지수 아님'
+    '</div></div>',
+    unsafe_allow_html=True,
+)
 
 st.subheader("🟩 업종별 주식 모멘텀 히트맵")
 st.caption(
